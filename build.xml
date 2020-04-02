@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project name="run">
+    <property name="player1.directory" value="out/production/ICPC_Challenge"/>
+    <property name="player1.main" value="Hunter"/>
+    <property name="player2.directory" value="out/production/ICPC_Challenge"/>
+    <property name="player2.main" value="Planter"/>
+
+    <target name="run_with_view">
+        <parallel>
+            <exec executable="java">
+                <arg value="-jar"/>
+                <arg value="icypc.jar"/>
+                <arg value="-player"/>
+                <arg value="java"/>
+                <arg value="-cp"/>
+                <arg value="${player1.directory}"/>
+                <arg value="${player1.main}"/>
+                <arg value="-player"/>
+                <arg value="java"/>
+                <arg value="-cp"/>
+                <arg value="${player2.directory}"/>
+                <arg value="${player2.main}"/>
+            </exec>
+        </parallel>
+    </target>
+
+    <target name="run_with_trace">
+        <parallel>
+            <exec executable="java">
+                <arg value="-jar"/>
+                <arg value="icypc.jar"/>
+                <arg value="-player"/>
+                <arg value="java"/>
+                <arg value="-cp"/>
+                <arg value="${player1.directory}"/>
+                <arg value="${player1.main}"/>
+                <arg value="-player"/>
+                <arg value="java"/>
+                <arg value="-cp"/>
+                <arg value="${player2.directory}"/>
+                <arg value="${player2.main}"/>
+                <arg value="-view"/>
+                <arg value="trace"/>
+                <arg value="trace.txt"/>
+            </exec>
+        </parallel>
+    </target>
+
+    <target name="view_trace_file">
+        <exec executable="java">
+            <arg value="-cp"/>
+            <arg value="icypc.jar"/>
+            <arg value="icpc.challenge.view.TracePlayer"/>
+            <arg value="-trace"/>
+            <arg value="trace.txt"/>
+        </exec>
+    </target>
+
+    <target name="run_3D">
+        <exec executable="java">
+            <arg value="-classpath"/>
+            <arg value=".:lib/*"/>
+            <arg value="icpc.challenge.main.Game"/>
+            <arg value="-player"/>
+            <arg value="java"/>
+            <arg value="-cp"/>
+            <arg value="java"/>
+            <arg value="Hunter"/>
+            <arg value="-player"/>
+            <arg value="java"/>
+            <arg value="-cp"/>
+            <arg value="java"/>
+            <arg value="Planter"/>
+            <arg value="-view"/>
+            <arg value="3D"/>
+        </exec>
+    </target>
+</project>
