@@ -6,6 +6,9 @@
 // ICPC Challenge
 // Sturgill, Baylor University
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.Scanner;
 import java.util.Random;
 import java.awt.Point;
@@ -352,7 +355,7 @@ public class Seeker {
     for (int i = 0; i < cList.length; i++) {
       Child player = new Child();
       if (i == 0 || i == 1) {
-        player.activity = new HunterActivity();
+        player.activity = new PlanterActivity();
       }
       if (i == 2 || i == 3) {
         player.activity = new PlanterActivity();
@@ -375,6 +378,10 @@ public class Seeker {
       // Parse the current map.
       readCurrentMap(height, ground, in);
 
+      if (!areAllOpponentsVisible()) {
+        recordMapVisibilityWithPrefix("Map Visibility at turn " + turnNum);
+      }
+
       // Read the states of all the children.
       readChildrenStates(cList, in);
 
@@ -382,7 +389,6 @@ public class Seeker {
       // look up.
       markChildren(ground, cList);
 
-      /*
       System.err.println("Height Map");
       for (int i = 0; i < Const.SIZE; i++) {
         for (int j = 0; j < Const.SIZE; j++) {
@@ -394,11 +400,12 @@ public class Seeker {
       System.err.println("Ground Map");
       for (int i = 0; i < Const.SIZE; i++) {
         for (int j = 0; j < Const.SIZE; j++) {
-          System.err.print(" " + height[i][j]);
+          // translate ground map back to original format
+          char code = (ground[i][j] == -1) ? '*' : (char) (ground[i][j] + 'a');
+          System.err.print(" " + code);
         }
         System.err.println();
       }
-       */
 
       // Decide what each child should do
       for (int i = 0; i < Const.CCOUNT; i++) {
@@ -414,6 +421,56 @@ public class Seeker {
       }
 
       turnNum = in.nextInt();
+    }
+  }
+
+  public static boolean areAllOpponentsVisible() {
+    // last 4 children in the array represent opponents
+    for (int i = Const.CCOUNT; i < Const.CCOUNT * 2; i++) {
+      if (cList[i].pos.x == -1 || cList[i].pos.y == -1) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  public static void recordMapVisibilityWithPrefix(String prefixMessage) {
+    String fileName = "visibility.txt";
+
+    try {
+      // Open given file in append mode.
+      BufferedWriter out = new BufferedWriter(
+          new FileWriter(fileName, true));
+      out.write(prefixMessage);
+      out.write('\n');
+      for (int i = 0; i < Const.SIZE; i++) {
+        for (int j = 0; j < Const.SIZE; j++) {
+          // translate ground map back to original format
+          if (j > 0) out.write(' ');
+          if (ground[i][j] == -1) {
+            out.write("*");
+          }
+          else {
+            String code = String.format("%d%s", height[i][j], (char)(ground[i][j] + 'a'));
+            out.write(code);
+          }
+        }
+        out.write('\n');
+      }
+
+      // now write children state
+      for (int i = 0; i < Const.CCOUNT * 2; i++) {
+        // {x:0, y:2, stance:'S', carry:'a', dazed:0}
+        Child c = cList[i];
+        String status = String.format("%d %d %s %s %d\n", c.pos.x, c.pos.y,
+            c.standing ? "S" : "C", (char)(c.holding + 'a'), c.dazed);
+        out.write(status);
+      }
+
+      out.close();
+    }
+    catch (IOException e) {
+      System.err.println("exception occurred" + e);
     }
   }
 
