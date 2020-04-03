@@ -13,7 +13,7 @@ import java.util.Scanner;
 import java.util.Random;
 import java.awt.Point;
 
-public class Seeker {
+public class Hybrid {
   // Constant used to mark child locations in the map.
   public static final int GROUND_CHILD = 10;
 
@@ -157,7 +157,7 @@ public class Seeker {
       this.instructions = instructions;
     }
 
-    abstract public Move chooseMove(Seeker.Child c);
+    abstract public Move chooseMove(Child c);
   }
 
   static class PlanterActivity extends Activity {
@@ -355,7 +355,7 @@ public class Seeker {
     for (int i = 0; i < cList.length; i++) {
       Child player = new Child();
       if (i == 0 || i == 1) {
-        player.activity = new PlanterActivity();
+        player.activity = new HunterActivity();
       }
       if (i == 2 || i == 3) {
         player.activity = new PlanterActivity();
@@ -475,8 +475,8 @@ public class Seeker {
   }
 
   public static void main(String[] args) {
-    Seeker seeker = new Seeker();
-    seeker.run();
+    Hybrid hybrid = new Hybrid();
+    hybrid.run();
   }
 
   private static void markChildren(int[][] ground, Child[] cList) {
