@@ -6,6 +6,7 @@ package oocl.icypc;// A simple player that just tries to hit children on the opp
 // ICPC Challenge
 // Sturgill, Baylor University
 
+import icypc.Const;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;

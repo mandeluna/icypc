@@ -1,10 +1,11 @@
-// A simple player that just tries to hit children on the opponent's
-// team with snowballs.
-//
-// Feel free to use this as a starting point for your own player.
-//
-// ICPC Challenge
-// Sturgill, Baylor University
+/*
+ * A player based on Sturgill, Baylor University example code
+ *
+ * Implements some of the strategies described at
+ * https://observablehq.com/@mandeluna/icpc-strategy-notes
+ *
+ * Keith Kwan, Margaret Del Mundo, Arumanthian Peter, Steven Wart, OOCL (USA), 2020
+ */
 
 package oocl.icypc;
 
@@ -29,22 +30,48 @@ public class Seeker {
   /**
    * Current game score for self (red) and opponent (blue).
    */
-  private static int[] score = new int[2];
+  private int[] score = new int[2];
 
   /**
    * Current snow height in each cell.
    */
-  private static int[][] height = new int[Const.SIZE][Const.SIZE];
+  private int[][] height = new int[Const.SIZE][Const.SIZE];
+
+  /**
+   * Accessor for testing and path-finding.
+   * Do not allow mutation of internal state.
+   *
+   * @return the height map
+   */
+  public int[][] getHeight() {
+    return copyBoard(height);
+  }
 
   /**
    * Contents of each cell.
    */
-  private static int[][] ground = new int[Const.SIZE][Const.SIZE];
+  private int[][] ground = new int[Const.SIZE][Const.SIZE];
+
+  /**
+   * Accessor for testing and path-finding.
+   * Do not allow mutation of internal state.
+   *
+   * @return the ground map
+   */
+  public int[][] getGround() {
+    return copyBoard(ground);
+  }
 
   /**
    * List of children on the field, half for each team.
    */
-  private static Player[] cList = new Player[2 * Const.CCOUNT];
+  private Player[] cList = new Player[2 * Const.CCOUNT];
+
+  public Seeker() {
+    for (int i = 0; i < 2 * Const.CCOUNT; i++) {
+      cList[i] = new Player();
+    }
+  }
 
   /* --- Geometry --- */
 
@@ -72,6 +99,17 @@ public class Seeker {
   }
 
   /**
+   * The player locations used for path finding etc.
+   *
+   * @return a list of the red team locations
+   */
+  public List<Point> playerLocations() {
+    return Arrays.stream(cList).map(c -> c.pos)
+        .filter(pos -> pos.x >= 0 && pos.y >= 0)
+        .collect(Collectors.toList());
+  }
+
+  /**
    * Find the cells neighboring the argument within a distance of 1
    *
    * TODO unit tests
@@ -79,7 +117,7 @@ public class Seeker {
    * @param pos the index of the cell with neighbors
    * @return a list of neighboring cell indexes
    */
-  static public List<Point> neighbors(Point pos) {
+  public List<Point> neighbors(Point pos) {
     List<Point> destinations = new ArrayList<>();
     int range = 8;
 
@@ -118,7 +156,7 @@ public class Seeker {
   }
 
   public static int euclidean(int x1, int y1, int x2, int y2) {
-    return round(Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)));
+    return (int)(Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)));
   }
 
   /**
@@ -143,7 +181,7 @@ public class Seeker {
     return points;
   }
 
-  public static class Player {
+  public class Player {
 
     Point pos = new Point();
     boolean standing;
@@ -393,19 +431,13 @@ public class Seeker {
    * An activity is a named list of moves carried out according to some policy (maybe ad-hoc)
    */
   abstract static class Activity {
-    Move[] instructions;
     boolean isComplete = false;
-
-    Activity(Move[] instructions) {
-      this.instructions = instructions;
-    }
-
     abstract public Move nextMove(Player c);
   }
 
-  static class PlanterActivity extends Activity {
+  class PlanterActivity extends Activity {
 
-    static Move[] snowmanMoves = {
+    Move[] instructions = {
         new Move("idle"),
         new Move("crouch"),
         new Move("pickup", 1, 0),
@@ -422,10 +454,6 @@ public class Seeker {
         new Move("drop", 1, 0),
         new Move("stand"),
     };
-
-    PlanterActivity() {
-      super(snowmanMoves);
-    }
 
     public Move nextMove(Player c) {
 
@@ -493,11 +521,7 @@ public class Seeker {
     }
   }
 
-  static class MakeSnowball extends Activity {
-
-    public MakeSnowball() {
-      super(null);
-    }
+  class MakeSnowball extends Activity {
 
     public Move nextMove(Player c) {
 
@@ -557,7 +581,6 @@ public class Seeker {
     Player target;
 
     public Target(Player target) {
-      super(null);
       this.target = target;
     }
 
@@ -606,18 +629,18 @@ public class Seeker {
       score[Const.BLUE] = in.nextInt();
 
       // Parse the current map.
-      readCurrentMap(height, ground, in);
+      readCurrentMap(in);
 
-      if (!areAllOpponentsVisible()) {
+      if (!visibleOpponents().isEmpty()) {
         recordMapVisibilityWithPrefix("Map Visibility at turn " + turnNum);
       }
 
       // Read the states of all the children.
-      readChildrenStates(cList, in);
+      readChildrenStates(in);
 
       // Mark all the children in the map, so they are easy to
       // look up.
-      markChildren(ground, cList);
+      markChildren();
 
       System.err.println("Height Map");
       for (int i = 0; i < Const.SIZE; i++) {
@@ -638,16 +661,16 @@ public class Seeker {
       }
 
       // only reset visibility targets for snowmen if we don't know where all opponents are
-      if (!areAllOpponentsVisible()) {
+      if (!visibleOpponents().isEmpty()) {
         int iterations = 0;
         int previous_score = 0;
-        int best_score = 0;
+        int best_score = visibleCount(ground);
         List<Point> targets = Arrays.stream(cList)
             .map(c -> c.pos).collect(Collectors.toList());
 
-        while (iterations < MAX_ITERATIONS && best_score <= previous_score) {
+        while (iterations < MAX_ITERATIONS && best_score > previous_score) {
           previous_score = best_score;
-          targets = iterateVisibilityTargets(targets);
+          best_score = iterateVisibilityTargets(targets, ground);
           iterations++;
         }
       }
@@ -673,11 +696,13 @@ public class Seeker {
     return Arrays.stream(board).map(int[]::clone).toArray(int[][]::new);
   }
 
-  int visibleCount(int[][] board) {
+  public int visibleCount(int[][] board) {
     int count = 0;
-    for (int[] row : board) {
-      for (int cell : row) {
-        count += (cell < 0) ? 0 : 1;
+    for (int i = 0; i < Const.SIZE; i++) {
+      for (int j = 0; j < Const.SIZE; j++) {
+        if (board[i][j] >= 0) {
+          count++;
+        }
       }
     }
     return count;
@@ -695,15 +720,17 @@ public class Seeker {
    * @param board ground visibility map
    * @param targets array
    */
-  private void markVisibles(int[][] board, List<Point> targets) {
+  public void markVisibles(int[][] board, List<Point> targets) {
     for (int i = 0; i < Const.SIZE; i++) {
       for (int j = 0; j < Const.SIZE; j++) {
-        if (board[i][j] == GROUND_CHILD) {
-          board[i][i] = -1;
-        }
-        for (Point target : targets) {
-          if (euclidean(target.x, target.y, i, j) < 8) {
-            board[i][i] = Const.GROUND_EMPTY;
+        board[i][j] = -1;
+      }
+    }
+    for (Point t : targets) {
+      for (int i = 0; i < Const.SIZE; i++) {
+        for (int j = 0; j < Const.SIZE; j++) {
+          if ((t.x - j) * (t.x - j) + (t.y - i) * (t.y - i) < 64) {
+            board[i][j] = Const.GROUND_EMPTY;
           }
         }
       }
@@ -713,55 +740,72 @@ public class Seeker {
   /**
    * Conduct an iteration of a random walk of the positions on the board, starting
    * with the players current locations. If the new target locations provide improved
-   * visibility, return the updated target list. If no visibility improvements are
-   * found, return an unmodified copy.
+   * visibility, return the improved score.
+   *
+   * The locations of the targets will be updated in-place
    *
    * @return the visibility count of the modified target list
    */
-  private List<Point> iterateVisibilityTargets(List<Point> targets) {
+  public int iterateVisibilityTargets(List<Point> targets, int[][] board) {
+
+    markVisibles(board, targets);
+    int best_score = visibleCount(board);
 
     for (int i = 0; i < targets.size(); i++) {
 
       Point target = targets.get(i);
-      Point previous = (Point)target.clone();
-      int[][] board = copyBoard(ground);
-      int best_score = visibleCount(board);
+      markVisibles(board, targets); // reset board changes made in previous iterations
 
       for (Point neighbor : neighbors(target)) {
-        int[][] board_copy = copyBoard(board);
-        List<Point> targets_copy = clone(targets);
-
         target = neighbor;
 
-        markVisibles(board_copy, targets_copy);
-        int new_count = visibleCount(board_copy);
+        markVisibles(board, targets);
+        int new_count = visibleCount(board);
 
         // higher score is better
-        if (new_count <= best_score) {
-          // revert and continue
-          targets.set(i, previous);
-          continue;
+        if (new_count > best_score) {
+          // lock in changes
+          targets.set(i, (Point)target.clone());
+          markVisibles(board, targets);
+          best_score = new_count;
+          break;
         }
-        // lock in changes
-        best_score = new_count;
-        targets.set(i, (Point)target.clone());
-        markVisibles(board, targets);
       }
     }
-    return targets;
+    return best_score;
   }
 
-  public static boolean areAllOpponentsVisible() {
+  public List<Player> visibleOpponents() {
+    List<Player> visible = new ArrayList<>();
     // last 4 children in the array represent opponents
     for (int i = Const.CCOUNT; i < Const.CCOUNT * 2; i++) {
       if (cList[i].pos.x == -1 || cList[i].pos.y == -1) {
-        return false;
+        visible.add(cList[i]);
       }
     }
-    return true;
+    return visible;
   }
 
-  public static void recordMapVisibilityWithPrefix(String prefixMessage) {
+  public String printVisibility(int[][] board) {
+    StringBuilder b = new StringBuilder();
+    for (int i = 0; i < Const.SIZE; i++) {
+      for (int j = 0; j < Const.SIZE; j++) {
+        // translate ground map back to original format
+        if (j > 0) b.append(' ');
+        if (board[i][j] < 0) {
+          b.append("*");
+        }
+        else {
+          String code = String.format("%d%s", height[i][j], (char)(board[i][j] + 'a'));
+          b.append(code);
+        }
+      }
+      b.append('\n');
+    }
+    return b.toString();
+  }
+
+  public void recordMapVisibilityWithPrefix(String prefixMessage) {
     String fileName = "visibility.txt";
 
     try {
@@ -806,7 +850,7 @@ public class Seeker {
     seeker.run();
   }
 
-  private static void markChildren(int[][] ground, Player[] cList) {
+  void markChildren() {
     for (int i = 0; i < Const.CCOUNT * 2; i++) {
       Player c = cList[i];
       if (c.pos.x >= 0) {
@@ -815,7 +859,7 @@ public class Seeker {
     }
   }
 
-  private static void readCurrentMap(int[][] height, int[][] ground, Scanner in) {
+  void readCurrentMap(Scanner in) {
     String token;
     for (int i = 0; i < Const.SIZE; i++) {
       for (int j = 0; j < Const.SIZE; j++) {
@@ -832,7 +876,7 @@ public class Seeker {
     }
   }
 
-  private static void readChildrenStates(Player[] cList, Scanner in) {
+  void readChildrenStates(Scanner in) {
     String token;
     for (int i = 0; i < Const.CCOUNT * 2; i++) {
       Player c = cList[i];
@@ -842,7 +886,8 @@ public class Seeker {
       if (token.equals("*")) {
         c.pos.x = -1;
         c.pos.y = -1;
-      } else {
+      }
+      else {
         // Record the child's location.
         c.pos.x = Integer.parseInt(token);
         c.pos.y = in.nextInt();
