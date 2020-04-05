@@ -1,4 +1,4 @@
-// A simple player that just tries to plant snowmen in interesting
+package icypc;// A simple player that just tries to plant snowmen in interesting
 // places.
 //
 // Feel free to use this as a starting point for your own player.
@@ -6,7 +6,6 @@
 // ICPC Challenge
 // Sturgill, Baylor University
 
-import java.util.ArrayList;
 import java.util.Scanner;
 import java.util.Random;
 import java.awt.Point;

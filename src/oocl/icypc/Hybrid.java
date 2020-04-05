@@ -1,4 +1,4 @@
-// A simple player that just tries to hit children on the opponent's
+package oocl.icypc;// A simple player that just tries to hit children on the opponent's
 // team with snowballs.
 //
 // Feel free to use this as a starting point for your own player.

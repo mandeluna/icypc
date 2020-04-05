@@ -4,6 +4,8 @@
 // ICPC Challenge
 // Sturgill, Baylor University
 
+package icypc;
+
 /** Collection of constants from the game. */
 public class Const {
   /** Width and height of the playing field. */
