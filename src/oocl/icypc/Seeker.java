@@ -10,12 +10,12 @@
 package oocl.icypc;
 
 import icypc.Const;
-import java.awt.Point;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
 import java.util.stream.Collectors;
@@ -25,7 +25,7 @@ public class Seeker {
   public static final int GROUND_CHILD = 10;
 
   // Constant used to limit iterations in finding optimal targets for snowman locations
-  public static final int MAX_ITERATIONS = Const.SIZE / 2 + 1;
+  public static final int MAX_ITERATIONS = Const.SIZE;
 
   /**
    * Current game score for self (red) and opponent (blue).
@@ -75,6 +75,41 @@ public class Seeker {
 
   /* --- Geometry --- */
 
+  public static class Point {
+    public int x;
+    public int y;
+
+    public Point() {}
+
+    public Point(int x, int y) {
+      this.x = x;
+      this.y = y;
+    }
+
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o.getClass() != Point.class) {
+        return false;
+      }
+      Point p = (Point)o;
+      return (this.x == p.x && this.y == p.y);
+    }
+
+    public int hashCode() {
+      return Integer.hashCode(x) << 32 + Integer.hashCode(y);
+    }
+
+    public Point plus(Point p) {
+      return new Point(p.x + this.x, p.y + this.y);
+    }
+
+    public String toString() {
+      return String.format("[%d, %d]", this.x, this.y);
+    }
+  }
+
   // first 4 permutations are crawl directions, last 8 are run directions
   static Point[] permutations = {
 
@@ -94,10 +129,6 @@ public class Seeker {
       new Point(-2, 0)    // west
   };
 
-  static Point addPoints(Point p, Point q) {
-    return new Point(p.x + q.x, p.y + q.y);
-  }
-
   /**
    * The player locations used for path finding etc.
    *
@@ -109,10 +140,13 @@ public class Seeker {
         .collect(Collectors.toList());
   }
 
+  public List<Player> players() {
+    return Arrays.stream(cList).filter(c -> c.pos.x >= 0 && c.pos.y >= 0)
+        .collect(Collectors.toList());
+  }
+
   /**
    * Find the cells neighboring the argument within a distance of 1
-   *
-   * TODO unit tests
    *
    * @param pos the index of the cell with neighbors
    * @return a list of neighboring cell indexes
@@ -122,12 +156,9 @@ public class Seeker {
     int range = 8;
 
     for (int i = 0; i < range; i++) {
-      Point c = addPoints(pos, permutations[i]);
+      Point c = pos.plus(permutations[i]);
 
-      if (c.x >= 0 && c.x < Const.SIZE &&
-          c.y >= 0 && c.y < Const.SIZE &&
-          ground[c.x][c.y] == Const.GROUND_EMPTY) {
-
+      if (c.x >= 0 && c.x < Const.SIZE && c.y >= 0 && c.y < Const.SIZE) {
         destinations.add(c);
       }
     }
@@ -189,6 +220,10 @@ public class Seeker {
     int holding;
     int dazed;
 
+    public String toString() {
+      return String.format("Player(%d, %d)", pos.x, pos.y);
+    }
+
     /**
      * Current instruction this child is executing.
      */
@@ -219,6 +254,25 @@ public class Seeker {
     }
 
     /**
+     * Sort nearby things by distance - good for finding useful items
+     *
+     * @param cover ground constant to match
+     * @return a list of items on the ground matching cover
+     */
+    public List<Point> nearbyItems(int cover) {
+      List<Point> nearby = new ArrayList<>();
+      for (int i = 0; i < Const.CCOUNT; i++) {
+        for (int j = 0; j < Const.CCOUNT; j++) {
+          if (ground[i][j] == cover) {
+            nearby.add(new Point(i, j));
+          }
+        }
+      }
+      nearby.sort(Comparator.comparingInt(a -> euclidean(pos, a)));
+      return nearby;
+    }
+
+    /**
      * Just because you can't see someone, doesn't mean they can't see you.
      * This method finds whom the receiver can target (or vice-versa)
      *
@@ -231,14 +285,20 @@ public class Seeker {
     public List<Player> visibleOpponents() {
       List<Player> visible = new ArrayList<>();
       List<Player> friends = friends();
+      int max_range = 20;
 
       // last 4 children in the array represent opponents
       for (int i = Const.CCOUNT; i < Const.CCOUNT * 2; i++) {
         if (cList[i].pos.x > 0 && cList[i].pos.y > 0) {
 
+          if (euclidean(cList[i].pos, this.pos) > max_range) {
+            continue;
+          }
+
           // filter out opponents who are obstructed
-          List<Point> obstacles = interpolate(pos, cList[i].pos).stream().filter(p ->
-              ((height[p.x][p.y] >= 6) || (friends.contains(p)))).collect(Collectors.toList());
+          List<Point> obstacles = interpolate(pos, cList[i].pos).stream()
+              .filter(p -> ((height[p.x][p.y] >= 6) || (ground[p.x][p.y] != Const.GROUND_EMPTY)))
+              .collect(Collectors.toList());
 
           if (obstacles.isEmpty()) {
             visible.add(cList[i]);
@@ -261,40 +321,42 @@ public class Seeker {
 
     /**
      * Find the cells neighboring the receiver's position
-     * within a distance of 1 if crouched, 2 if standing
-     *
-     * TODO unit tests
      *
      * @return a list of neighboring cells
      */
     public List<Point> neighbors() {
-      List<Point> destinations = new ArrayList<>();
-      int range = standing ? 8 : 4;
+      return (standing) ? neighbors8() : neighbors4();
+    }
 
-      for (int i = 0; i < range; i++) {
-        Point c = addPoints(pos, permutations[i]);
+    /**
+     * Order the results clockwise from the from assuming the receiver is facing away from the origin
+     *
+     * @return a list of neighboring cells in 4 cardinal directions (N, E, S, W)
+     */
+    public List<Point> neighbors4() {
+      return neighborsByAngle(Math.PI / 2);
+    }
 
-        if (c.x >= 0 && c.x < Const.SIZE &&
-            c.y >= 0 && c.y < Const.SIZE &&
-            ground[c.x][c.y] == Const.GROUND_EMPTY) {
+    /**
+     * Order the results clockwise from the from assuming the receiver is facing away from the origin
+     *
+     * @return a list of neighboring cells in 8 directions (N, NE, E, SE, S, SW, W, NW)
+     */
+    public List<Point> neighbors8() {
+      return neighborsByAngle(Math.PI / 4);
+    }
 
-          if (standing && i > 4) {
-            Point d = addPoints(pos, permutations[i + 4]);
-            if (d.x >= 0 && d.x < Const.SIZE &&
-                d.y >= 0 && d.y < Const.SIZE &&
-                ground[d.x][d.y] == Const.GROUND_EMPTY) {
-              destinations.add(d);
-            }
-            else {
-              destinations.add(c);
-            }
-          }
-          else {
-            destinations.add(c);
-          }
+    public List<Point> neighborsByAngle(double angle) {
+      double offset = Math.atan2(pos.y, pos.x);
+      List<Point> neighbors = new ArrayList<>();
+      for (double direction = Math.PI * 2 + offset; direction > offset; direction -= angle) {
+        Point vec = new Point(pos.x + (int)Math.round(Math.cos(direction)), pos.y + (int)Math.round(Math.sin(direction)));
+
+        if (vec.x >= 0 && vec.x < Const.SIZE && vec.y >= 0 && vec.y < Const.SIZE) {
+          neighbors.add(vec);
         }
       }
-      return destinations;
+      return neighbors;
     }
 
     /**
@@ -360,7 +422,8 @@ public class Seeker {
     /**
      * Run the OODA (observe-orient-decide-act) loop
      *
-     * Activities should be as fine-grained as possible (e.g. not "build a snowman" but "build a snowball")
+     * Activities should be as fine-grained as possible (e.g. not "build a snowman" but
+     * "build a snowball", "stack a snowball")
      *
      * 1. Observe - find the highest priority opportunity or threat
      * 2. Orient - move to optimal location
@@ -375,36 +438,75 @@ public class Seeker {
         return new Move();
       }
 
-      // we have not decided yet, so assess threats and opportunities
-      if (activity == null) {
-        // NB: if we can't see them, it doesn't mean they can't see us
-        List<Player> threats = visibleOpponents();
+      // which opponents are potential targets/threats?
+      // NB: if we can't see them, it doesn't mean they can't see us
+      for (Player threat: visibleOpponents()) {
+        if (threat.holding == Const.HOLD_S1 || activity == null || activity.isComplete) {
+          // clear and present danger
+          if (holding == Const.HOLD_S1) {
 
-        if (threats.size() > 0) {
+            // Stand up if the child is armed.
+            if (!standing) {
+              // TODO only stand if the target is too far away to hit from a crouching position
+              return new Move("stand");
+            }
+            else {
+              // excellent, we are prepared
+              System.err.println(this + " is selecting target " + threat);
+              int dx = threat.pos.x - pos.x;
+              int dy = threat.pos.y - pos.y;
 
-           Player threat = threats.get(0);
-           int distance = euclidean(threat.pos, pos);
-           if (distance < 15) {
-             // check if we actually have a snowball
-             if (holding == Const.HOLD_S1) {
-               activity = new Target(threat);
-               return activity.nextMove(this);
-             }
-             else {
-               activity = new MakeSnowball();
-               return activity.nextMove(this);
-             }
-           }
+              return new Move("throw", threat.pos.x + dx * 2, threat.pos.y + dy * 2);
+            }
+          }
+          else {
+            System.err.println(this + " needs ammunition");
+            // TODO crouch down? find cover?
+            activity = new AcquireSnowball();
+          }
         }
+      }
 
-        // Step 2. See if the player needs a new destination.
-        // TODO find optimal destination
-        return moveToward(runTarget);
+      // TODO we aren't facing threats, let's look for opportunities
+      // 1. make a snowball if we haven't got one
+      // 2. look for enemy snowmen to decapitate
+      // 3. look for partially-built snowmen to finish
+      // 4. if there are no threats or opportunities, continue to the runTarget
+      if (activity == null || activity.isComplete) {
+        if (holding != Const.HOLD_S1) {
+          System.err.println(this + " is making a snowball");
+          activity = new AcquireSnowball();
+        }
+        // no point in ducking if there's nobody around
+        else if (!standing) {
+          return new Move("stand");
+        }
+        else if (pos.x != runTarget.x && pos.y != runTarget.y) {
+          System.err.println(this + " is moving towards " + runTarget);
+          return moveToward(runTarget);
+        }
+        // make a snowman if nobody nearby has started one
+        else {
+          System.err.println(this + " has arrived at " + runTarget);
+          Player nearbyBuilder = null;
+          for (Player f : friends()) {
+            if (f.activity instanceof BuildSnowman && euclidean(f.pos, pos) < 8) {
+              nearbyBuilder = f;
+            }
+          }
+          if (nearbyBuilder == null) {
+            System.err.println(this + " is building a snowman");
+            activity = new BuildSnowman();
+          }
+          else {
+            // we have a snowball, we don't see any threats
+            System.err.println(this + " has a snowball, doesn't see any threats, " + nearbyBuilder + " is building a snowman nearby");
+            return new Move();
+          }
+        }
       }
-      else {
-        // Step 4. execute activity
-        return activity.nextMove(this);
-      }
+      // Step 4. execute activity
+      return activity.nextMove(this);
     }
   }
 
@@ -435,7 +537,18 @@ public class Seeker {
     abstract public Move nextMove(Player c);
   }
 
-  class PlanterActivity extends Activity {
+  class TakePosition extends Activity {
+
+    public Move nextMove(Player c) {
+      if (c.pos.x == c.runTarget.x && c.pos.y == c.runTarget.y) {
+        isComplete = true;
+      }
+
+      return c.chooseMove();
+    }
+  }
+
+  class BuildSnowman extends Activity {
 
     Move[] instructions = {
         new Move("idle"),
@@ -503,7 +616,7 @@ public class Seeker {
       }
 
       // Are we building a snowman?
-      if (c.state > 0) {
+      if (c.state > 0 && !isComplete) {
         // Stamp out a move from our instruction template and return it.
         Move m = new Move(instructions[c.state].action);
         if (instructions[c.state].dest != null) {
@@ -511,24 +624,43 @@ public class Seeker {
               c.pos.y + instructions[c.state].dest.y);
         }
         c.state = c.state + 1;
-        isComplete = c.state == instructions.length;
-
+        isComplete = (c.state == instructions.length);
         return m;
       }
 
-      System.err.println("icypc.Planter is complete, should not be idling");
+      assert(isComplete);
+      System.err.println("BuildSnowman is complete, should not be idling");
       return new Move();
     }
   }
 
-  class MakeSnowball extends Activity {
+  class AcquireSnowball extends Activity {
 
     public Move nextMove(Player c) {
 
       Move m = new Move();
 
-      // Try to acquire a snowball if we need one.
-      if (c.holding != Const.HOLD_S1) {
+      // first look for a nearby snowball
+      List<Point> nearby = c.nearbyItems(Const.GROUND_S);
+      if (!nearby.isEmpty()) {
+        System.err.println(c + " sees nearby snowballs at " +
+            nearby.stream().map(ea -> ea.toString()).collect(Collectors.joining(", ")));
+        Point nearest = nearby.get(0);
+        int distance = euclidean(nearest, c.pos);
+        if (distance <= 2) {
+          System.err.println(c + " is picking up a snowball at " + nearby);
+          m.action = "pickup";
+          m.dest = nearest;
+        }
+        // we can get there in 2 turns or so
+        else if (euclidean(nearest, c.pos) < 4) {
+          m.action = c.standing ? "run" : "crawl";
+          m.dest = new Point(Math.max(nearest.x, c.pos.x), Math.max(nearest.y, c.pos.y));
+          System.err.println(c + " is moving to " + m.dest + " to pick up a snowball at " + nearby);
+        }
+      }
+      // otherwise just make one
+      else if (c.holding != Const.HOLD_S1) {
         // Crush into a snowball, if we have snow.
         if (c.holding == Const.HOLD_P1) {
           m.action = "crush";
@@ -537,24 +669,23 @@ public class Seeker {
         else {
           // We don't have snow, see if there is some nearby.
           int sx = -1, sy = -1;
-          for (int ox = c.pos.x - 1; ox <= c.pos.x + 1; ox++)
-            for (int oy = c.pos.y - 1; oy <= c.pos.y + 1; oy++) {
-              // Is there snow to pick up?
-              if (ox >= 0 && ox < Const.SIZE &&
-                  oy >= 0 && oy < Const.SIZE &&
-                  (ox != c.pos.x || oy != c.pos.y) &&
-                  ground[ox][oy] == Const.GROUND_EMPTY &&
-                  height[ox][oy] > 0) {
-                sx = ox;
-                sy = oy;
-              }
+          // Look in front of us first
+          for (Point n : c.neighbors8()) {
+            System.err.println(c + " is checking for snow at " + n);
+            if (ground[n.x][n.y] == Const.GROUND_EMPTY && height[n.x][n.y] > 0) {
+              sx = n.x;
+              sy = n.y;
+              break;
             }
+          }
+
           // If there is snow, try to get it.
           if (sx >= 0) {
             if (c.standing) {
               m.action = "crouch";
             }
             else {
+              System.err.println(c + " is picking up snow at [" + sx + ", " + sy + "]");
               m.action = "pickup";
               m.dest = new Point(sx, sy);
             }
@@ -565,10 +696,9 @@ public class Seeker {
             // move one over
             // TODO could get stuck in a loop here (how?), might want to check for visited points
             //      write some tests to confirm
-            for (Point d : c.moveDestinations()) {
-              m.dest = d;
-              break;
-            }
+            Point dest = c.moveDestinations().get(0);
+            System.err.println(c + " is moving to find snow at [" + dest.x + ", " + dest.y + "]");
+            m.dest = dest;
           }
         }
       }
@@ -576,37 +706,13 @@ public class Seeker {
     }
   }
 
-  static class Target extends Activity {
-
-    Player target;
-
-    public Target(Player target) {
-      this.target = target;
-    }
-
-    public Move nextMove(Player c) {
-      Move m = new Move();
-
-      assert(c.holding == Const.HOLD_S1);
-
-      // Stand up if the child is armed.
-      if (!c.standing) {
-        // TODO only stand if the target is too far away to hit from a crouching position
-        m.action = "stand";
+  public boolean areAllPlayersIdle() {
+    for (Player p : cList) {
+      if (p.activity != null && !p.activity.isComplete) {
+        return false;
       }
-      else {
-        int dx = target.pos.x - c.pos.x;
-        int dy = target.pos.y - c.pos.y;
-
-        m.action = "throw";
-        // TODO - this heuristic will not always work
-        // throw past the victim, so we will probably hit them
-        // before the snowball falls into the snow.
-        m.dest = new Point(target.pos.x + dx * 2, target.pos.y + dy * 2);
-        isComplete = true;
-      }
-      return m;
     }
+    return true;
   }
 
   public void run() {
@@ -631,9 +737,9 @@ public class Seeker {
       // Parse the current map.
       readCurrentMap(in);
 
-      if (!visibleOpponents().isEmpty()) {
-        recordMapVisibilityWithPrefix("Map Visibility at turn " + turnNum);
-      }
+//      if (visibleOpponents().isEmpty()) {
+//        recordMapVisibilityWithPrefix("Map Visibility at turn " + turnNum);
+//      }
 
       // Read the states of all the children.
       readChildrenStates(in);
@@ -642,6 +748,7 @@ public class Seeker {
       // look up.
       markChildren();
 
+      /*
       System.err.println("Height Map");
       for (int i = 0; i < Const.SIZE; i++) {
         for (int j = 0; j < Const.SIZE; j++) {
@@ -659,12 +766,16 @@ public class Seeker {
         }
         System.err.println();
       }
+       */
 
       // only reset visibility targets for snowmen if we don't know where all opponents are
-      if (!visibleOpponents().isEmpty()) {
+      List<Player> threats = visibleOpponents();
+
+      if (threats.isEmpty() && areAllPlayersIdle()) {
+        System.err.println("No opponents visible - looking for optimal snowman positions");
         int iterations = 0;
-        int previous_score = 0;
-        int best_score = visibleCount(ground);
+        int previous_score = -1;
+        int best_score = 0;
         List<Point> targets = Arrays.stream(cList)
             .map(c -> c.pos).collect(Collectors.toList());
 
@@ -673,6 +784,18 @@ public class Seeker {
           best_score = iterateVisibilityTargets(targets, ground);
           iterations++;
         }
+
+        for (int i = 0; i < Const.CCOUNT; i++) {
+          Player player = cList[i];
+          if (player.activity == null || player.activity.isComplete) {
+            player.runTarget = targets.get(i);
+          }
+        }
+      }
+      else {
+        String threatLocations = threats.stream().map(ea -> ea.pos.toString())
+            .collect(Collectors.joining(", "));
+        System.err.println("Enemies spotted at " + threatLocations);
       }
 
       // Decide what each child should do
@@ -680,10 +803,11 @@ public class Seeker {
         Move m = cList[i].chooseMove();
 //        System.err.println(String.format("child %d move is %s", i, m.action));
 
-        /** Write out the child's move */
+        /* Write out the child's move */
         if (m.dest == null) {
           System.out.println(m.action);
-        } else {
+        }
+        else {
           System.out.println(m.action + " " + m.dest.x + " " + m.dest.y);
         }
       }
@@ -706,11 +830,6 @@ public class Seeker {
       }
     }
     return count;
-  }
-
-  public List<Point> clone(List<Point> original) {
-    return original.stream().map(ea -> (Point)ea.clone())
-        .collect(Collectors.toList());
   }
 
   /**
@@ -752,25 +871,28 @@ public class Seeker {
     int best_score = visibleCount(board);
 
     for (int i = 0; i < targets.size(); i++) {
-
       Point target = targets.get(i);
-      markVisibles(board, targets); // reset board changes made in previous iterations
+      Point best_target = target;
 
       for (Point neighbor : neighbors(target)) {
-        target = neighbor;
-
+        targets.set(i, neighbor);
         markVisibles(board, targets);
         int new_count = visibleCount(board);
 
         // higher score is better
         if (new_count > best_score) {
-          // lock in changes
-          targets.set(i, (Point)target.clone());
+          // lock in any improvement, ignore subsequent neighbors
+          targets.set(i, neighbor);
           markVisibles(board, targets);
           best_score = new_count;
-          break;
+          best_target = neighbor;
+        }
+        else {
+          // revert changes
+          targets.set(i, target);
         }
       }
+      targets.set(i, best_target);
     }
     return best_score;
   }
@@ -779,7 +901,7 @@ public class Seeker {
     List<Player> visible = new ArrayList<>();
     // last 4 children in the array represent opponents
     for (int i = Const.CCOUNT; i < Const.CCOUNT * 2; i++) {
-      if (cList[i].pos.x == -1 || cList[i].pos.y == -1) {
+      if (cList[i].pos.x > 0 && cList[i].pos.y > 0) {
         visible.add(cList[i]);
       }
     }

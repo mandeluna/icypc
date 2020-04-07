@@ -1,14 +1,15 @@
 package oocl.icypc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.awt.Point;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
+import oocl.icypc.Seeker.Player;
+import oocl.icypc.Seeker.Point;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -119,16 +120,83 @@ class SeekerTest {
   }
 
   @Test
+  public void testNeighbors() {
+    Point center = new Point(15, 15);
+    Point[] nearby = {
+        new Point(15, 16),
+        new Point(16, 15),
+        new Point(14, 14),
+        new Point(14, 15),
+        new Point(16, 16),
+        new Point(16, 14),
+        new Point(14, 14),
+        new Point(14, 16),
+    };
+    assertEquals(seeker.neighbors(center), Arrays.asList(nearby));
+  }
+
+  @Test
+  public void testNeighborsByAngle() {
+    Point center = new Point(15, 15);
+    Player player = seeker.players().get(0);
+    player.pos = center;
+
+    Point[] nearby = {
+        new Point(16, 16),
+        new Point(16, 15),
+        new Point(16, 14),
+        new Point(15, 14),
+        new Point(14, 14),
+        new Point(14, 15),
+        new Point(14, 16),
+        new Point(15, 16),
+    };
+    assertEquals(player.neighbors8(), Arrays.asList(nearby));
+  }
+
+  @Test
+  public void testPlayer0Neighbors() {
+    Point[] neighbors0_4 = {
+        new Point(0, 3),
+        new Point(1, 2),
+        new Point(0, 1),
+    };
+    Point[] neighbors0_8 = {
+        new Point(0, 3),
+        new Point(1, 3),
+        new Point(1, 2),
+        new Point(1, 1),
+        new Point(0, 1),
+    };
+
+    List<Player> players = seeker.players();
+    assertEquals(players.get(0).neighbors4(), Arrays.asList(neighbors0_4));
+    assertEquals(players.get(0).neighbors8(), Arrays.asList(neighbors0_8));
+  }
+
+  @Test
   public void testInitialPaths() {
     List<Point> targets = seeker.playerLocations();
-    int previous_score = 0;
+    int previous_score = -1;
+    int score = 0;
+    int[][] board = seeker.getGround();
+    int max_iterations = 30;
+    int iterations = 0;
 
-    for (int i = 0; i < 16; i++) {
+    while (iterations < max_iterations && score > previous_score) {
+      previous_score = score;
       // each iteration should discard board visibility changes made during previous iterations
-      int new_score = seeker.iterateVisibilityTargets(targets, seeker.getGround());
-      assertTrue(new_score > previous_score);
-      previous_score = new_score;
+      score = seeker.iterateVisibilityTargets(targets, board);
+      iterations++;
     }
-    assertEquals(Seeker.euclidean(targets.get(0), targets.get(1)), 16);
+
+    Point[] points = {
+      new Point(7, 23),
+      new Point(22, 22),
+      new Point(22, 7),
+      new Point(7, 7),
+    };
+    assertEquals(score, 772);
+    assertEquals(targets, Arrays.asList(points));
   }
 }
