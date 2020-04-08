@@ -2,6 +2,7 @@ package oocl.icypc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import icypc.Const;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -57,6 +58,38 @@ class SeekerTest {
       + "* * \n"
       + "* * \n"
       + "* *";
+
+  String busyMap = "* * * * 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * 3a 3a 3a 3a 3a 3a 3a * * * *\n"
+      + "* * 3a 2a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * *\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a *\n"
+      + "* 2a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3k 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3k 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 6i 0a 3a 3a 3a 3a 3a 3a 0b 3a 3a 3a 3a 3a 3a 3a 6i 0a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3k 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 0b 3a 3a 3a 3a 3a 3a 0b * * * * 3a 3a 0b 3a 3a 3a 3a * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3k 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 6f 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 4c 3a 3a 3a * * * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 0a 3a 0a 2a * * * * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3k * * * * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * * * *\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * * * * * *\n"
+      + "* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\n"
+      + "* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\n"
+      + "* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\n"
+      + "* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *";
 
   Seeker seeker = new Seeker();
 
@@ -155,6 +188,15 @@ class SeekerTest {
   }
 
   @Test
+  public void testClone() {
+    Point p = new Point(3, 2);
+    Point q = p.clone();
+    p.x = 4;
+    assertEquals(q.x, 3);
+    assertEquals(q.y, 2);
+  }
+
+  @Test
   public void testPlayer0Neighbors() {
     Point[] neighbors0_4 = {
         new Point(0, 3),
@@ -199,4 +241,35 @@ class SeekerTest {
     assertEquals(score, 772);
     assertEquals(targets, Arrays.asList(points));
   }
-}
+
+  @Test
+  public void testBusyMap() {
+    InputStream stream = new ByteArrayInputStream(busyMap.getBytes());
+    Scanner in = new Scanner(stream);
+    seeker.readCurrentMap(in);
+    int[][] board = seeker.getGround();
+
+    List<Point> locs = new ArrayList<>();
+    for (int i = 0; i < Const.SIZE; i++) {
+      for (int j = 0; j < Const.SIZE; j++) {
+        if (board[i][j] == Seeker.GROUND_CHILD) {
+          locs.add(new Point(i, j));
+        }
+      }
+    }
+
+    assertEquals(locs.size(), 5);
+
+    List<Player> players = seeker.players();
+    for (int i = 0; i < players.size(); i++) {
+      players.get(i).pos = locs.get(i);
+    }
+
+    Point point3 = new Point(7, 7);
+    Player player3 = players.stream().filter(p -> p.pos.equals(point3)).findAny().get();
+    seeker.repositionPlayer(player3);
+
+    assertEquals(player3.pos, new Point(7, 23));
+  }
+
+} // class
