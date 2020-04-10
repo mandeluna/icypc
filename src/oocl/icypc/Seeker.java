@@ -120,23 +120,17 @@ public class Seeker {
     }
   }
 
-  // first 4 permutations are crawl directions, last 8 are run directions
   static Point[] permutations = {
 
       new Point(0, 1),    // north
       new Point(1, 0),    // east
-      new Point(-1, -1),  // south
+      new Point(0, -1),  // south
       new Point(-1, 0),   // west
 
       new Point(1, 1),    // northeast
       new Point(1, -1),   // southwest
       new Point(-1, -1),  // southeast
       new Point(-1, 1),   // northwest
-
-      new Point(0, 2),    // north
-      new Point(2, 0),    // east
-      new Point(-2, -2),  // south
-      new Point(-2, 0)    // west
   };
 
   /**
@@ -220,7 +214,10 @@ public class Seeker {
    * @return a list of neighboring cells in 4 cardinal directions (N, E, S, W)
    */
   public List<Point> neighbors4(Point origin) {
-    return neighborsByAngle(origin, Math.PI / 2);
+    return Arrays.stream(Arrays.copyOfRange(permutations, 0, 4))
+        .map(origin::plus)
+        .filter(pt -> pt.x >= 0 && pt.x < Const.SIZE && pt.y >= 0 && pt.y < Const.SIZE)
+        .collect(Collectors.toList());
   }
 
   /**
@@ -229,21 +226,10 @@ public class Seeker {
    * @return a list of neighboring cells in 8 directions (N, NE, E, SE, S, SW, W, NW)
    */
   public List<Point> neighbors8(Point origin) {
-    return neighborsByAngle(origin, Math.PI / 4);
-  }
-
-  public List<Point> neighborsByAngle(Point origin, double angle) {
-    double offset = Math.atan2(origin.y, origin.x);
-    List<Point> neighbors = new ArrayList<>();
-    for (double direction = Math.PI * 2 + offset; direction > offset; direction -= angle) {
-      Point vec = new Point(origin.x + (int)Math.round(Math.cos(direction)),
-                            origin.y + (int)Math.round(Math.sin(direction)));
-
-      if (vec.x >= 0 && vec.x < Const.SIZE && vec.y >= 0 && vec.y < Const.SIZE) {
-        neighbors.add(vec);
-      }
-    }
-    return neighbors;
+    return Arrays.stream(Arrays.copyOfRange(permutations, 0, 8))
+        .map(origin::plus)
+        .filter(pt -> pt.x >= 0 && pt.x < Const.SIZE && pt.y >= 0 && pt.y < Const.SIZE)
+        .collect(Collectors.toList());
   }
 
   /**
@@ -252,7 +238,8 @@ public class Seeker {
    *
    * Complicated by the fact that a cell might be invisible!
    * This method will treat invisible locations as inaccessible
-   * If the target is invisible, try finding a path to the furthest visible point instead.
+   * If the target is invisible, or unreachable because parts of the path
+   * are invisible, try finding a path to the furthest visible point instead.
    *
    * See this article for a wonderful introduction
    * https://www.redblobgames.com/pathfinding/a-star/introduction.html
@@ -303,11 +290,11 @@ public class Seeker {
     List<Point> path = new ArrayList<>();
     while (!current.equals(start)) {
       path.add(current);
-      if (cameFrom.get(current) == null) {
-        // this may happen if the destination contains an obstacle
-        log("   *** freePath() found a null entry for %s", current);
-      }
       current = cameFrom.get(current);
+      if (current == null) {
+        // this may happen if the destination is unreachable
+        return Collections.emptyList();
+      }
     }
     path.add(start);
     Collections.reverse(path);
@@ -494,7 +481,6 @@ public class Seeker {
      *    - let's set a range of between 8-15 units in each dimension
      */
     public void reposition() {
-      List<Player> friends = players();
       List<Player> enemies = visibleOpponents();
       List<Point> snowmen = nearbyItems(Const.GROUND_SMR);
 
@@ -509,13 +495,23 @@ public class Seeker {
           continue;
         }
         this.runTarget = bestDestinationCloseTo(nearest.pos, this.pos);
+        return;
       }
 
       for (Player nearest : enemies) {
         this.runTarget = bestDestinationCloseTo(nearest.pos, this.pos);
+        return;
       }
 
-      this.runTarget = bestDestinationCloseTo(new Point(23, 23), pos);
+      int index = Arrays.asList(cList).indexOf(this);
+      Point[] destinations = {
+          new Point(7, 23),
+          new Point(23, 7),
+          new Point(15, 15),
+          new Point(7, 23),
+      };
+
+      this.runTarget = bestDestinationCloseTo(destinations[index], pos);
     }
 
     /**
@@ -544,12 +540,24 @@ public class Seeker {
         log(" => new dest is %s", dest);
         runTarget = dest;
       }
+
       List<Point> path = freePath(pos, dest, standing);
 
-      if (path.size() < 2) {
-        log("%s is unable to move to %s (furthest visible is %s), idling", this, target, dest);
-        // Nowhere to move, just return the idle move.
-        return new Move();
+      List<Point> interpolation = interpolate(pos, dest);
+      int lastIndex = interpolation.size() - 1;
+
+      while (path.size() < 2 && lastIndex >= 1) {
+        log(" => %s is unreachable, temporary dest is %s", target, dest);
+        dest = interpolation.get(lastIndex);
+        path = freePath(pos, dest, standing);
+
+        if (lastIndex == 1) {
+          log("%s is unable to move to %s (furthest visible is %s), idling", this, target, dest);
+          // Nowhere to move, just return the idle move.
+          // TODO this could be smarter, maybe
+          return new Move();
+        }
+        lastIndex--;
       }
       // the first element of the path is the starting point
       log(this + " is moving toward " + path.get(1));
@@ -761,6 +769,9 @@ public class Seeker {
      */
     int state = 0;
 
+    // we need 2 nearby sources of snow with height >= 3, and an unblocked dest
+    Point source1, source2, dest, drop;
+
     Move[] instructions = {
         new Move("idle"),
         new Move("crouch"),
@@ -793,22 +804,53 @@ public class Seeker {
         if (c.holding != Const.HOLD_EMPTY &&
             c.pos.y < Const.SIZE - 1 &&
             height[c.pos.x][c.pos.y + 1] <= Const.MAX_PILE - 3) {
-          return new Move("drop", c.pos.x, c.pos.y + 1);
+          drop = bestDestinationCloseTo(c.pos, c.pos);
+          log(" => %s dropping at %s", c, drop);
+          return new Move("drop", drop.x, drop.y);
         }
 
         // See if we should start running our build script.
         // Are we far from other things, is the ground empty
         // and do we have enough snow to build a snowman.
-        //if (nearDist > 5 * 5 &&
-        if (c.pos.x < Const.SIZE - 1 &&
-            c.pos.y < Const.SIZE - 1 &&
-            ground[c.pos.x + 1][c.pos.y] == Const.GROUND_EMPTY &&
-            ground[c.pos.x + 1][c.pos.y + 1] == Const.GROUND_EMPTY &&
-            height[c.pos.x + 1][c.pos.y] >= 3 &&
-            height[c.pos.x + 1][c.pos.y + 1] >= 3 &&
-            c.holding == Const.HOLD_EMPTY) {
+        // Make sure we have at least 4 empty squares around us
+        int squareCount = 0;
+        String neighborString = neighbors8(c.pos).stream().map(Point::toString)
+            .collect(Collectors.joining(", "));
+        log(" => %s neighbors are %s", c, neighborString);
+
+        for (Point p : neighbors8(c.pos)) {
+          if (ground[p.x][p.y] == Const.GROUND_EMPTY) {
+            squareCount++;
+          }
+          else continue;
+
+          if (p.equals(drop)) {
+            continue;
+          }
+          if (source1 == null) {
+            log(" => %s setting source1 to %s", c, p);
+            source1 = p;
+          }
+          else if (source2 == null) {
+            log(" => %s setting source2 to %s", c, p);
+            source2 = p;
+          }
+          else if (dest == null) {
+            log(" => %s setting dest to %s", c, p);
+            dest = p;
+          }
+        }
+
+        if (source1 != null && source2 != null && dest != null &&
+            c.holding == Const.HOLD_EMPTY && squareCount >= 4) {
           // Start trying to build a snowman.
+          log(" => %s building a snowman at %s, taking snow from %s and %s", c, dest, source1, source2);
           state = 1;
+        }
+        else {
+          // if it's a bad spot, abort the operation
+          c.reposition();
+          isComplete = true;
         }
       }
 
@@ -817,8 +859,7 @@ public class Seeker {
         // Stamp out a move from our instruction template and return it.
         Move m = new Move(instructions[state].action);
         if (instructions[state].dest != null) {
-          m.dest = new Point(c.pos.x + instructions[state].dest.x,
-              c.pos.y + instructions[state].dest.y);
+          m.dest = instructions[state].dest.y > 0 ? source1 : source2;
         }
         state = state + 1;
         this.isComplete = (state == instructions.length);
@@ -854,7 +895,7 @@ public class Seeker {
         Point nearest = nearby.get(0);
         int distance = euclidean(nearest, c.pos);
         log(" => distance is %d", distance);
-        if (distance <= 2) {
+        if (distance < 2) {
           if (c.standing) {
             log(c + " is crouching");
             m.action = "crouch";
