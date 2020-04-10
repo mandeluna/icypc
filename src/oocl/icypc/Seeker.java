@@ -370,8 +370,6 @@ public class Seeker {
      * This method finds whom the receiver can target (or vice-versa)
      *
      * TODO this method needs some test coverage
-     *      1) are we sorting in the correct order
-     *      2) are we handling all cases of obstacles
      *
      * @return a collection of visible opponents, sorted by distance
      */
@@ -685,6 +683,12 @@ public class Seeker {
           log(this + " needs ammunition");
           // TODO crouch down? find cover?
           activity = new AcquireSnowball();
+          // we are being targeted, can we catch instead of getting hit?
+          if (threat.holding == Const.HOLD_S1 &&
+              euclidean(threat.pos, pos) <= 8 &&
+              holding == Const.HOLD_EMPTY) {
+            return new Move("catch", threat.pos.x, threat.pos.y);
+          }
         }
       }
 
