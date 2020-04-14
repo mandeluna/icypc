@@ -390,24 +390,6 @@ public class Hybrid {
       // look up.
       markChildren(ground, cList);
 
-      System.err.println("Height Map");
-      for (int i = 0; i < Const.SIZE; i++) {
-        for (int j = 0; j < Const.SIZE; j++) {
-          System.err.print(" " + height[i][j]);
-        }
-        System.err.println();
-      }
-
-      System.err.println("Ground Map");
-      for (int i = 0; i < Const.SIZE; i++) {
-        for (int j = 0; j < Const.SIZE; j++) {
-          // translate ground map back to original format
-          char code = (ground[i][j] == -1) ? '*' : (char) (ground[i][j] + 'a');
-          System.err.print(" " + code);
-        }
-        System.err.println();
-      }
-
       // Decide what each child should do
       for (int i = 0; i < Const.CCOUNT; i++) {
         Move m = cList[i].chooseMove();

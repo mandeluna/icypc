@@ -16,6 +16,7 @@ import java.util.Scanner;
 import java.util.stream.Collectors;
 import oocl.icypc.Seeker.Player;
 import oocl.icypc.Seeker.Point;
+import oocl.icypc.Seeker.Point3;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -354,6 +355,28 @@ class SeekerTest {
     // snowmen should still be intact
     assertEquals(board[8][7], Const.GROUND_SMR);
     assertEquals(board[6][21], Const.GROUND_SMR);
+  }
+
+  @Test
+  public void testTrajectory() {
+//    Player 0 {pos:[29, 27], dest:[28, 28], hold:4, stand:s} targets: [29, 23] at 4 units away
+//  => interpolate [29, 27] to [29, 15] is [29, 27, 9]-[29, 26, 9]-[29, 25, 8]-[29, 24, 7]-[29, 23, 6]-[29, 22, 6]-[29, 21, 5]-[29, 20, 4]-[29, 19, 3]-[29, 18, 3]-[29, 17, 2]-[29, 16, 1]-[29, 15, 0]
+//  => interpolate [29, 27] to [29, 19] is [29, 27, 9]-[29, 26, 8]-[29, 25, 7]-[29, 24, 6]-[29, 23, 5]-[29, 22, 4]-[29, 21, 3]-[29, 20, 2]-[29, 19, 0]
+
+    Point start = new Point(29, 27);
+    Point target = new Point(29, 23);
+
+    int dx = target.x - start.x;
+    int dy = target.y - start.y;
+
+    double angle = Math.atan2(dy, dx);
+    int dist = seeker.euclidean(start, target); // TODO rounding error is being magnified
+
+    Point focus = new Point((int) (start.x + (dist * 3) * Math.cos(angle)),
+        (int) (start.y + (dist * 3) * Math.sin(angle)));
+
+    List<Point3> path = seeker.interpolate(start, focus, 9);
+    assertTrue(seeker.isAccurateTrajectory(path, target));
   }
 
 } // class
