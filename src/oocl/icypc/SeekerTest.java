@@ -160,7 +160,7 @@ class SeekerTest {
       player.reposition();
     }
     // TODO repositioning logic needs work
-    assertEquals(player3.runTarget, new Point(6, 22));
+    assertEquals(player3.runTarget, new Point(8, 8));
   }
 
   @Test
