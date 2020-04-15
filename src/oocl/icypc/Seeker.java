@@ -726,7 +726,7 @@ public class Seeker {
 
       // don't want everyone going to the same place
       // centers() will always return 4 interesting spots
-      int granularity = our_snowmen.isEmpty() ? 16 : 8;
+      int granularity = our_snowmen.size() > 2 ? 16 : 8;
       int index = Arrays.asList(cList).indexOf(this);
       Point dest = centers(granularity).get(index);
 
@@ -739,7 +739,7 @@ public class Seeker {
       }
 
       log("%s is repositioning to %s", this, dest);
-      this.runTarget = bestDestinationCloseTo(dest, pos, false);
+      this.runTarget = dest;
     }
 
     /**
@@ -1097,10 +1097,18 @@ public class Seeker {
                 c, ground[partial.x][partial.y], partial, this);
           }
           else if (dist < 8) {
+            // check if one of our teammates is already there
+            for (Player f : friends) {
+              if (euclidean(f.pos, partial) < dist) {
+                log("%s is not moving towards partial (%d), %s is closer",
+                    this, ground[partial.x][partial.y], f);
+                return c.moveToward(c.runTarget);
+              }
+            }
             // move closer to complete it if it's cheaper than building from scratch
-            // TODO check if one of our teammates is already there
             c.runTarget = partial;
-            log("%s changed runTarget to move closer to snowman at %s", c, partial);
+            log("%s changed runTarget to move closer to partial (%d) at %s",
+                c, ground[partial.x][partial.y], partial);
             return c.moveToward(c.runTarget);
           }
           // there is a nearby partial, but one of our teammates is on it
