@@ -898,7 +898,7 @@ public class Seeker {
         }
 
         // clear and present danger
-        if (holding == Const.HOLD_S1 && (!(activity instanceof Build) /*|| beAggressive */)) {
+        if (holding == Const.HOLD_S1) {
 
           // Stand up if the child is armed.
           if (!standing) {
@@ -952,6 +952,8 @@ public class Seeker {
 
       // maybe there's a nearby unfinished snowman we can work on
       List<Point> nearestPartials = nearestIncomplete(pos);
+      List<Point> nearestSnowmen = nearbyItems(Const.GROUND_SMR); // our snowmen
+      Point nearestSnowman = nearestSnowmen.isEmpty() ? null : nearestSnowmen.get(0);
       List<Player> friends = friends();
 
       // TODO we aren't facing threats, let's look for opportunities
@@ -972,7 +974,7 @@ public class Seeker {
           log(this + " is moving towards " + runTarget);
           return moveToward(runTarget);
         }
-        else {
+        else if (nearestSnowman == null || euclidean(pos, nearestSnowman) > 8) {
           Point dest = null;
           for (Point partial : nearestPartials) {
             Optional<Player> f = friends.stream().filter(p -> p.runTarget == partial).findAny();
@@ -986,6 +988,10 @@ public class Seeker {
             runTarget = dest;
           }
           log("%s is starting a new snowman at %s", this, runTarget);
+          activity = new Build();
+        }
+        else {
+          reposition();
           activity = new Build();
         }
       }
@@ -1097,35 +1103,31 @@ public class Seeker {
             log("%s changed runTarget to move closer to snowman at %s", c, partial);
             return c.moveToward(c.runTarget);
           }
+          // there is a nearby partial, but one of our teammates is on it
+          // there may be more, but we should ultimately handle that case without introducing more logic here
         }
-        // there is a nearby partial, but one of our teammates is on it
-        // there may be more, but we should ultimately handle that case without introducing more logic here
 
         // If we didn't get to finish the last snowman, maybe we're holding something.
         // We should drop it.
-        if (c.holding != Const.HOLD_EMPTY && c.pos.y < Const.SIZE - 1 &&
-            height[c.pos.x][c.pos.y + 1] <= Const.MAX_PILE - 3) {
-          Point drop = bestDestinationCloseTo(c.pos, c.pos, true);
-          log("%s dropping at %s", c, drop);
-          return new Move("drop", drop.x, drop.y);
+        if (c.holding != Const.HOLD_EMPTY) {
+          for (Point p : neighbors8(c.pos)) {
+            if (ground[p.x][p.y] == Const.GROUND_EMPTY && height[p.x][p.y] <= Const.MAX_PILE - 3) {
+              log("%s dropping at %s", c, p);
+              return new Move("drop", p.x, p.y);
+            }
+          }
         }
 
         // 3. finish the snowman
-        int squareCount = 0;
         for (Point p : neighbors8(c.pos)) {
-          if (ground[p.x][p.y] == Const.GROUND_EMPTY &&
-              height[c.pos.x][c.pos.y + 1] <= Const.MAX_PILE - 3) {
-            squareCount++;
-          }
-          else continue;
-
-          if (dest == null) {
+          if (ground[p.x][p.y] == Const.GROUND_EMPTY) {
             log(" => %s setting dest to %s", c, p);
             dest = p;
+            break;
           }
         }
 
-        if (dest != null && c.holding == Const.HOLD_EMPTY && squareCount >= 4) {
+        if (dest != null && c.holding == Const.HOLD_EMPTY) {
           // Start trying to build a snowman.
           log(" => %s building a snowman at %s", c, dest);
           state = 1;
@@ -1196,6 +1198,8 @@ public class Seeker {
 
       // look for a nearby snowball
       List<Point> nearby = c.nearbyItems(Const.GROUND_S);
+      nearby.addAll(c.nearbyItems(Const.GROUND_MS));  // some of these might be lying around
+      nearby.addAll(c.nearbyItems(Const.GROUND_LS));
       nearby.addAll(c.nearbyItems(Const.GROUND_SMB)); // pick up a snowball from enemy snowman?
       nearby.sort(Comparator.comparingInt(pt -> euclidean(pt, c.pos)));
 
