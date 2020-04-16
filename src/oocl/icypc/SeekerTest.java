@@ -97,6 +97,46 @@ class SeekerTest {
       + "3a 3a 3a 3a 3a 3a * * * * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * *\n"
       + "* * * * * * * * * * * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * *";
 
+  String turn53 = "* * * * * * * * * * * * * * * * * * * * * 3a 3a 3a 3a 3a 3a 3a * * *\n"
+      + "* * * * 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a *\n"
+      + "* * 2a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 0a 3a 0a 3a 0a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 0a 3a 0a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 2a 3k 2a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 9i 0a 9i 3a 3a 3a 3a 3a 0b 3a 3a 3a 3a 3a 3a 9i 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 2a 0k 7f\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3k 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 0a 3a 0a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a\n"
+      + "3a 3a 3a 3a 3a 3a 3a 9i 3a 3a 3k 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 0a 9i 0a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 0a 6j 3a 3a 3a 3a 3a 3a * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 0b 3a 3a 3k 3a 3a 3a 0b 3a 3a 3a 3a 3a * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * *\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * *\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * *\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * *\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 2a 3f 3k 3a * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 0a 3a 0a 3a 3a 3a 3a 3a 3k * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 9i 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * *\n"
+      + "3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * *\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * *\n"
+      + "* 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * *\n"
+      + "* * 3a 3a 3a 3a 3a 3a 3a 3a 3a 3a * * * * * * * * * * * * * * * * * * *\n"
+      + "7 24 S a 0\n"
+      + "15 11 S e 0\n"
+      + "13 10 S e 0\n"
+      + "10 14 S e 0\n"
+      + "22 14 C b 0\n"
+      + "9 29 S a 4\n"
+      + "-1 -1 C a 0\n"
+      + "21 15 S a 0\n";
+
   Seeker seeker = new Seeker();
 
   @BeforeEach
@@ -155,7 +195,7 @@ class SeekerTest {
     player2.pos = new Point(22, 7);
     player3.pos = new Point(7, 7);
 
-    seeker.markVisibles(players.stream().map(e -> e.pos).collect(Collectors.toList()));
+    seeker.markVisibles(board, players.stream().map(e -> e.pos).collect(Collectors.toList()));
     for (Player player : players) {
       player.reposition();
     }
