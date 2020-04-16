@@ -906,23 +906,26 @@ public class Seeker {
             int dy = target.y - pos.y;
 
             double angle = Math.atan2(dy, dx);
-            int h = height[target.x][target.y]; // don't assume that target is 6 units high
 
-            // overthrow target at least 2 units beyond the target (can be off board)
-            // incrementally adjust until we know that the target cell is included in the
-            // linear interpolation path of the throw
+            // ensure that the target cell is included in the linear interpolation path of the throw
             log("%s targets: %s at %d units away", this, target, dist);
 
-            // TODO this 8*8 should not be hard-coded; our max range is 24, and if we assume the
-            //      target is 6 units high and we are shooting from a height of 9 units, then we
-            //      need to aim for 24 units to get the ball to drop by 3 units to hit the target
-            //      some simple geometric calculation is needed to get the range and dist multiplier
-            if (dx * dx + dy * dy < 8 * 8) {
-              Point p1 = new Point((int) (pos.x + (dist * 3) * Math.cos(angle)),
-                  (int) (pos.y + (dist * 3) * Math.sin(angle)));
+            // height of the player throwing the snowball
+            int h0 = standing ? Const.STANDING_HEIGHT : Const.CROUCHING_HEIGHT;
+            // height of the target's head (only matters for snowmen; for players we just need h > 0)
+            int h = height[target.x][target.y];
 
-              List<Point3> path = interpolate(pos, p1, standing ? 9 : 6);
-              log("  => interpolate %s to %s is %s", pos, p1, pathString(path));
+            boolean isDecap = isSnowman && h0 > h;
+
+            int overthrow = isDecap ? dist * h0 / (h0 - h) : dist * 3;
+            int max_range = isDecap ? Const.THROW_LIMIT / (h0 / (h0 - h)) : 8;
+
+            if (dx * dx + dy * dy < max_range * max_range) {
+              Point p1 = new Point((int) (pos.x + overthrow * Math.cos(angle)),
+                  (int) (pos.y + overthrow * Math.sin(angle)));
+
+              List<Point3> path = interpolate(pos, p1, h0);
+              log("  => overthrow = %d, interpolate %s to %s is %s", overthrow, pos, p1, pathString(path));
 
               if (isAccurateTrajectory(path, target)) {
                 // sometimes we have an accurate trajectory but we fail to kill the enemy snowman
@@ -937,10 +940,12 @@ public class Seeker {
 
                 return new Move("throw", p1.x, p1.y);
               }
-              // we couldn't get a shot, try and get closer
-              if (isSnowman) {
-                return moveToward(target);
-              }
+            }
+            // we couldn't get a shot, try and get closer
+            if (isSnowman) {
+              log("%s target is too far away (%d units, max_range is %d) - trying to close in",
+                  this, dist, max_range);
+              return moveToward(target);
             }
           }
         }
