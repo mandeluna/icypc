@@ -449,4 +449,18 @@ class SeekerTest {
     assertTrue(seeker.isAccurateTrajectory(path, target));
   }
 
+  @Test
+  public void testCrawl() {
+    // Player 2 {pos:[12, 13], dest:[15, 15], zone:4, hold:1, stand:C, act:B[7]} action is crawl [13, 14]
+    Point start = new Point(7, 7);
+    Point end = new Point(7, 8);
+
+    assertEquals(seeker.neighbors4(start).size(), 4);
+    assertEquals(seeker.neighbors12(start, false).size(), 4);
+
+    List<Point> path = seeker.freePath(start, end, false);
+
+    assertEquals(path.size(), 2);
+  }
+
 } // class
