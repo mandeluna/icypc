@@ -1690,8 +1690,8 @@ public class Seeker_V1 {
     Map<String, String> environment = System.getenv();
 
     // need to use environment variables because the command line is inaccessible
-    verboseDebug = environment.containsKey("SEEKER_VERBOSE_DEBUG");
-    debug = environment.containsKey("SEEKER_DEBUG");
+    verboseDebug = environment.containsKey("SEEKER_V1_VERBOSE_DEBUG");
+    debug = environment.containsKey("SEEKER_V1_DEBUG");
 
     Seeker_V1 seeker = new Seeker_V1();
     seeker.run();

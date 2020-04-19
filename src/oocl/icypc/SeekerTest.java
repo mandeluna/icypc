@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import oocl.icypc.Seeker.Player;
 import oocl.icypc.Seeker.Point;
 import oocl.icypc.Seeker.Point3;
+import oocl.icypc.Seeker.Zone;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -199,8 +200,37 @@ class SeekerTest {
     for (Player player : players) {
       player.reposition();
     }
-    // TODO repositioning logic needs work
-    assertEquals(player3.runTarget, new Point(8, 8));
+
+    assertEquals(Seeker.zoneContaining(player3.runTarget), Seeker.Zones.get(1));
+  }
+
+  @Test
+  public void testZones() {
+    Point pt = new Point(21, 23);
+    Zone zone = Seeker.zoneContaining(pt);
+    Zone zone8 = Seeker.Zones.get(8);
+    assertEquals(zone, zone8);
+  }
+
+  @Test
+  public void testZoneCenters() {
+    Point[] centers = {
+        new Point(5, 5),
+        new Point(15, 5),
+        new Point(26, 5),
+        new Point(5, 15),
+        new Point(15, 15),
+        new Point(26, 15),
+        new Point(5, 26),
+        new Point(15, 26),
+        new Point(26, 26),
+    };
+
+    for (int i = 0; i < centers.length; i++) {
+      Point center = centers[i];
+      Zone zone = Seeker.Zones.get(i);
+      assertEquals(zone.centroid, center);
+    }
   }
 
   @Test

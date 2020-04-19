@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Random;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -33,20 +34,22 @@ public class Seeker {
   // Constant used to mark child locations in the map.
   public static final int GROUND_CHILD = 10;
 
+  private final Random rnd = new Random();
+
   /**
    * Current game score for self (red) and opponent (blue).
    */
-  private int[] score = new int[2];
+  private final int[] score = new int[2];
 
   /**
    * Current snow height in each cell.
    */
-  private int[][] height = new int[Const.SIZE][Const.SIZE];
+  private final int[][] height = new int[Const.SIZE][Const.SIZE];
 
   /**
    * Contents of each cell.
    */
-  private int[][] ground = new int[Const.SIZE][Const.SIZE];
+  private final int[][] ground = new int[Const.SIZE][Const.SIZE];
 
   /**
    * Accessor for testing and path-finding.
@@ -61,11 +64,101 @@ public class Seeker {
   /**
    * List of children on the field, half for each team.
    */
-  private Player[] cList = new Player[2 * Const.CCOUNT];
+  private final Player[] cList = new Player[2 * Const.CCOUNT];
 
   public Seeker() {
     for (int i = 0; i < 2 * Const.CCOUNT; i++) {
       cList[i] = new Player();
+    }
+    initializeZones();
+  }
+
+  /**
+   * Minimum and maximum extents of each zone/sector on the playfield
+   * Used for repositioning and player defense
+   */
+  static final public Point[] ZoneBoundaries = {
+      new Point(0, 0), new Point(9, 9),     // Zone 0 (10x10)
+      new Point(10, 0), new Point(20, 9),   // Zone 1 (11x10)
+      new Point(21, 0), new Point(30, 9),   // Zone 2 (10x10)
+      new Point(0, 10), new Point(9, 20),   // Zone 3 (10x11)
+      new Point(10, 10), new Point(20, 20), // Zone 4 (11x11)
+      new Point(21, 10), new Point(30, 20), // Zone 5 (10x11)
+      new Point(0, 21), new Point(9, 30),   // Zone 6 (10x10)
+      new Point(10, 21), new Point(20, 30), // Zone 7 (11x10)
+      new Point(21, 21), new Point(30, 30), // Zone 8 (10x10)
+  };
+
+  static final public List<Zone> Zones = new ArrayList<>();
+
+  /**
+   * Find the zone containing the point provided
+   *
+   * @param pt the point to look up
+   * @return the zone containing the point p
+   */
+  public static Zone zoneContaining(Point pt) {
+    if (pt.x < 0 || pt.x >= Const.SIZE || pt.y < 0 || pt.y >= Const.SIZE) {
+      throw new IndexOutOfBoundsException("Out of bounds " + pt);
+    }
+    int index = -1;
+    for (int zb = 0; zb < ZoneBoundaries.length; zb += 2) {
+      Point min = ZoneBoundaries[zb];
+      Point max = ZoneBoundaries[zb + 1];
+      if (pt.x >= min.x && pt.x <= max.x && pt.y >= min.y && pt.y <= max.y) {
+        index = zb / 2;
+        break;
+      }
+    }
+    if (index < 0) {
+      throw new IndexOutOfBoundsException(pt + " is not found in any zone");
+    }
+    return Zones.get(index);
+  }
+
+  private void initializeZones() {
+    for (int zb = 0; zb < ZoneBoundaries.length; zb += 2) {
+      Point min = ZoneBoundaries[zb];
+      Point max = ZoneBoundaries[zb + 1];
+      List<Point> points = new ArrayList<>();
+
+      for (int i = min.x; i <= max.x; i++) {
+        for (int j = min.y; j <= max.y; j++) {
+          points.add(new Point(i, j));
+        }
+      }
+
+      Zone zone = new Zone(points);
+      zone.centroid = new Point((max.x + min.x + 1) / 2, (max.y + min.y + 1) / 2);
+
+      Zones.add(zone);
+    }
+  }
+
+  public class Zone {
+    public List<Point> points;
+    public Point centroid;
+
+    public String toString() {
+      int index = Zones.indexOf(this);
+      int size = points.size();
+      Point min = ZoneBoundaries[index * 2];
+      Point max = ZoneBoundaries[index * 2 + 1];
+      return String.format("Zone %d: %d points, extent:%s-%s, center:%s", index, size, min, max, centroid);
+    }
+
+    public int hiddenCount() {
+      int count = 0;
+      for (Point p : points) {
+        if (ground[p.x][p.y] < 0) {
+          count++;
+        }
+      }
+      return count;
+    }
+
+    public Zone(List<Point> points) {
+      this.points = points;
     }
   }
 
@@ -130,8 +223,6 @@ public class Seeker {
     public int y;
     public int h;
 
-    public Point3() {}
-
     public Point3(int x, int y, int h) {
       this.x = x;
       this.y = y;
@@ -166,16 +257,8 @@ public class Seeker {
       return (Integer.hashCode(x) << 8 + Integer.hashCode(y)) << 16 + Integer.hashCode(h);
     }
 
-    public Point3 plus(Point3 p) {
-      return new Point3(p.x + this.x, p.y + this.y, p.h + this.h);
-    }
-
     public String toString() {
       return String.format("[%d, %d, %d]", x, y, h);
-    }
-
-    public Point asPoint() {
-      return new Point(this.x, this.y);
     }
   }
 
@@ -243,7 +326,7 @@ public class Seeker {
     for (int t = 0; t <= n; t++) {
       int xt = p0.x + round(t * (float)(p1.x - p0.x) / n);
       int yt = p0.y + round(t * (float)(p1.y - p0.y) / n);
-      int ht = round(h0 - t * h0 / n);
+      int ht = round(h0 - (float)t * h0 / n);
 
       points.add(new Point3(xt, yt, ht));
     }
@@ -485,8 +568,8 @@ public class Seeker {
     public String toString() {
       int id = Arrays.asList(cList).indexOf(this);
       String code = activity == null ? null : activity.code();
-      return String.format("Player %d {pos:%s, dest:%s, hold:%d, stand:%s, act:%s}",
-          id, pos, runTarget, holding, standing ? "s" : "c", code);
+      return String.format("Player %d {pos:%s, dest:%s, hold:%d, stand:%s, act:%s, dazed:%d}",
+          id, pos, runTarget, holding, standing ? "s" : "c", code, dazed);
     }
 
     /**
@@ -502,7 +585,7 @@ public class Seeker {
     /**
      * Current set of moves being executed
      */
-    Activity activity;
+    Build activity;
 
     /**
      * List of friendly players
@@ -531,15 +614,6 @@ public class Seeker {
       List<Point> nearby = itemsMatching(cover);
       nearby.sort(Comparator.comparingInt(a -> euclidean(pos, a)));
       return nearby;
-    }
-
-    /**
-     * Find the cells neighboring the receiver's position
-     *
-     * @return a list of neighboring cells
-     */
-    public List<Point> neighbors() {
-      return (standing) ? neighbors8(this.pos) : neighbors4(this.pos);
     }
 
     /**
@@ -594,47 +668,6 @@ public class Seeker {
     }
 
     /**
-     * Sometimes we are looking for something which is far way from others points
-     *
-     * @param p a point of interest
-     * @param others a collection of points to measure
-     * @return the distance of the furthest point from p in others
-     */
-    int furthestDistance(Point p, List<Point> others) {
-      int furthest = 0;
-      for (Point o : others) {
-        int dist = euclidean(p, o);
-        if (dist > furthest) {
-          furthest = dist;
-        }
-      }
-      return furthest;
-    }
-
-    // return the center of the 8x8 region of squares that is
-    // the furthest from any snowman
-    public List<Point> centers(int granularity) {
-      List<Point> snowmen = nearbyItems(Const.GROUND_SMR);
-
-      List<Point> centers = new ArrayList<>();
-      for (int i = granularity / 2; i < Const.SIZE; i += granularity) {
-        for (int j = granularity / 2; j < Const.SIZE; j += granularity) {
-          centers.add(new Point(i, j));
-        }
-      }
-
-      centers.sort(Comparator.comparingInt(pt -> furthestDistance(pt, snowmen)));
-
-      log("candidate destinations: " + centers.stream()
-          .map(pt -> String.format("%s -> %s", pt, furthestDistance(pt, snowmen)))
-          .collect(Collectors.joining(", ")));
-
-      Collections.reverse(centers);
-
-      return centers;
-    }
-
-    /**
      * Enemy snowmen will reduce the visibility of our own snowmen.
      * This is a tricky problem because we won't actually know they
      * are there, unless one of our players is nearby.
@@ -664,42 +697,13 @@ public class Seeker {
     }
 
     /**
-     * Call this after some snowmen have been built and we are mostly dealing
-     * with snowball attacks from our opponents...
      *
-     * heuristics:
-     *   forbidden - stay away from our snowmen (do not draw fire)
-     *   stay close to our friends
-     *   stay closer to our enemies
-     *   be attracted to invisible parts of the map
-     *   don't go too far
-     *
-     *               - OR -
-     *
-     *  Call this after we've built a snowman and there is an opportunity to
-     *  build more snowmen elsewhere...
-     *
-     *  heuristics:
-     *    forbidden - try to avoid other players
-     *    forbidden - always stay away from our completed snowmen
-     *    stay close to our friends - they can provide cover while we build
-     *    be attracted to invisible parts of the map
-     *    go from [7, 7] to [7, 23] or [23, 7] or [15, 15] but maybe not [23, 23] (although sure why not)
-     *    - let's set a range of between 8-15 units in each dimension
      */
-    // the current destination is bad - don't use it
     public void reposition() {
       List<Point> our_snowmen = nearbyItems(Const.GROUND_SMR);
-      List<Point> their_snowmen = nearbyItems(Const.GROUND_SMB); // hard to see!
       Set<Point> forbidden = new HashSet<>(visited);
 
       forbidden.addAll(itemsMatching(Const.GROUND_TREE));
-
-      // 1. Create a disjoint set of all the unexplored parts of the map
-      // 2. Move to the centroid of the largest unexplored area
-      // 3. Ensure multiple players aren't moving to exactly the same place,
-      //    by adding 8 neighbors of other player's locations and runTargets
-      //    to forbidden set
 
       for (Point p : our_snowmen) {
         forbidden.addAll(neighbors8(p));
@@ -726,22 +730,30 @@ public class Seeker {
         }
       }
 
-      // don't want everyone going to the same place
-      // centers() will always return 4 interesting spots
-      int granularity = our_snowmen.size() > 2 ? 16 : 8;
-      int index = Arrays.asList(cList).indexOf(this);
-      Point dest = centers(granularity).get(index);
+      // no encroachment - not good if are we losing snowmen
+      // return a random square in the nearest dark zone (>30% hidden)
+      // that does not contain one of our teammates
 
-      // don't send everyone to the same point
-      Iterator<Point> n = neighbors8(dest).iterator();
-      while ((forbidden.contains(dest) || euclidean(dest, pos) < 8) && n.hasNext()) {
-        Point neighbor = n.next();
-        dest = new Point(clamp(0, Const.SIZE - 1, neighbor.x + 8),
-            clamp(0, Const.SIZE - 1, neighbor.y + 8));
-      }
+      List<Point> team = friends().stream()
+          .map(f -> f.pos)
+          .collect(Collectors.toList());
 
-      log("%s is repositioning to %s", this, dest);
-      this.runTarget = dest;
+      log("%s is repositioning. Current zone is %s", this, zoneContaining(pos));
+
+      List<Zone> darkZones = Zones.stream()
+          .filter(z -> (float) z.hiddenCount() / z.points.size() > 0.3 &&
+              !z.points.contains(team.get(0)) &&
+              !z.points.contains(team.get(1)) &&
+              !z.points.contains(team.get(2)))
+          .sorted(Comparator.comparingInt(z -> euclidean(pos, z.centroid)))
+          .collect(Collectors.toList());
+
+      // if there are not dark zones, just continue to patrol current zone
+      Zone zone = darkZones.isEmpty() ? zoneContaining(pos) : darkZones.get(0);
+
+      log("%s is repositioning. New zone is %s", this, zone);
+
+      this.runTarget = zone.points.get(rnd.nextInt(zone.points.size()));
     }
 
     /**
@@ -803,6 +815,327 @@ public class Seeker {
       return new Move(standing ? "run" : "crawl", dest.x, dest.y);
     }
 
+    /**
+     * We are unable to act, but we can reassess our current activities
+     */
+    void handleRetreat() {
+
+      // our position has likely changed, so let the main loop deal with threats
+      // move back to runTarget afterwards, then resume building snowman
+      if (activity != null && !activity.isComplete()) {
+        return;
+      }
+
+      // can't target enemy, move to the nearest obstacle
+      List<Point> obstacles = nearbyItems(Const.GROUND_TREE);
+      // don't hide behind our own snowmen
+      obstacles.addAll(nearbyItems(Const.GROUND_SMR));
+      obstacles.sort(Comparator.comparingInt(a -> euclidean(pos, a)));
+
+      log(this + " is dazed, retreating...");
+      if (!obstacles.isEmpty() && euclidean(obstacles.get(0), pos) < 2) {
+        Point obstacle = obstacles.get(0);
+        log(" => changing runTarget to obstacle (%d) at %s", ground[obstacle.x][obstacle.y], obstacle);
+        runTarget = bestDestinationCloseTo(obstacle, pos, false);
+      }
+      else { // into the fray!
+        List<Player> threats = visibleOpponents();
+        if (threats.size() > 0) {
+          Point t = threats.get(0).pos;
+          log(" => changing runTarget to ", t);
+          runTarget = bestDestinationCloseTo(t, pos, false);
+        }
+        // just back up
+        else {
+          Point reverse = new Point(pos.x - runTarget.x, pos.y - runTarget.y);
+          // reverse our direction and reassess our priorities
+          Point p = new Point(pos.x + (int) Math.signum(reverse.x) * 4,
+              pos.y + (int) Math.signum(reverse.y) * 4);
+          log(" => changing runTarget to ", p);
+          runTarget = p;
+        }
+      }
+    }
+
+    /**
+     * The nearest player on our team to a point
+     *
+     * @param p0 the point
+     * @return the teammate nearest to the point p
+     */
+    Player nearestPlayer(Point p0) {
+      Optional<Player> closest = players().stream()
+          .min(Comparator.comparingInt(p1 -> euclidean(p0, p1.pos)));
+
+      if (closest.isPresent()) {
+        return closest.get();
+      }
+      log("There must be a player close to %s", p0);
+      return null;
+    }
+
+    /**
+     * Consider the threats on the board and return a suitable response
+     *
+     * @return move to address the threat -- null if no suitable response is available
+     */
+    Move handleThreats() {
+      // which opponents are potential targets/threats?
+      // NB: if we can't see them, it doesn't mean they can't see us
+      List<Player> threats = visibleOpponents();
+      List<Point> targets = threats.stream()
+          .map(ea -> ea.pos)
+          .collect(Collectors.toList());
+
+      List<Point> snowmen = nearbyItems(Const.GROUND_SMB).stream()
+          .filter(p -> (ground[p.x][p.y] != Const.GROUND_EMPTY &&
+              ground[p.x][p.y] != GROUND_CHILD))
+          .collect(Collectors.toList());
+
+      targets.addAll(snowmen);
+      targets.sort(Comparator.comparingInt(p -> euclidean(this.pos, p)));
+
+      if (!targets.isEmpty()) {
+        String threatString = targets.stream().map(Point::toString)
+            .collect(Collectors.joining(", "));
+        log(this + " sees targets at " + threatString);
+      }
+
+      for (Point target : targets) {
+        boolean isSnowman = ground[target.x][target.y] == Const.GROUND_SMB;
+        Optional<Player> enemy = threats.stream().filter(ea -> ea.pos.equals(target)).findAny();
+
+        int dist = euclidean(this.pos, target);
+        int dx = target.x - pos.x;
+        int dy = target.y - pos.y;
+
+        double angle = Math.atan2(dy, dx);
+
+        // height of the player throwing the snowball
+        int h0 = standing ? Const.STANDING_HEIGHT : Const.CROUCHING_HEIGHT;
+        // height of the target's head (only matters for snowmen; for players we just need h > 0)
+        int h = height[target.x][target.y];
+
+        // if the snowman is 9 units tall, we need to be within 2 units
+        if (isSnowman && h0 == h && nearestPlayer(target) == this) {
+          return moveToward(target);
+        }
+
+        boolean isDecap = isSnowman && h0 > h;
+
+        int overthrow = isDecap ? dist * h0 / (h0 - h) : dist * 3;
+        int max_range = isDecap ? Const.THROW_LIMIT / (h0 / (h0 - h)) : 8;
+
+        // if enemies are building snowmen, we want to avoid targeting aggressively so we
+        // can have our build activities clean up the snowmen lying around the field
+        if (enemy.isPresent() && (enemy.get().holding != Const.HOLD_EMPTY || enemy.get().dazed > 1)) {
+          continue;
+        }
+
+        // clear and present danger
+        if (holding >= Const.HOLD_S1 && holding <= Const.HOLD_S3) {
+          // stand up if the player is armed
+          if (!standing) {
+            return new Move("stand");
+          }
+          // excellent, we are prepared
+          if (dx * dx + dy * dy < max_range * max_range) {
+            Point p1 = new Point((int) (pos.x + overthrow * Math.cos(angle)),
+                (int) (pos.y + overthrow * Math.sin(angle)));
+
+            List<Point3> path = interpolate(pos, p1, h0);
+            log("  => overthrow = %d, interpolate %s to %s is %s", overthrow, pos, p1, pathString(path));
+
+            if (isAccurateTrajectory(path, target)) {
+              // sometimes we have an accurate trajectory but we fail to kill the enemy snowman
+              // don't get stuck on the same pattern over and over
+              if (target.equals(lastTarget)) {
+                // it's a snowball fight, not hand-to-hand combat
+                if (dist < 2) {
+                  if (isSnowman) {
+                    // this should happen in the main loop anyhow
+                    return new Move("pickup", target.x, target.y);
+                  }
+                  else {
+                    // just dodge
+                    log("  => ✅ dodge");
+                    List<Point> dodges = neighbors12(pos, standing);
+                    Point dodge = dodges.get(rnd.nextInt(dodges.size()));
+                    return new Move("run", dodge.x, dodge.y);
+                  }
+                }
+                lastTarget = null;
+                return moveToward(target);
+              }
+
+              log("%s *** target %s: %s, p1:%s, h:%d", this, (isSnowman ? "snowman" : "player"),
+                  target, p1, h);
+              lastTarget = target;
+
+              return new Move("throw", p1.x, p1.y);
+            }
+          }
+        }
+        else {
+          // we are being targeted, can we catch instead of getting hit?
+          for (Player threat : threats) {
+            if (threat.holding == Const.HOLD_S1 &&
+                euclidean(threat.pos, pos) <= 8 &&
+                holding == Const.HOLD_EMPTY) {
+              log("%s getting ready to catch from %s", this, threat);
+              return new Move("catch", threat.pos.x, threat.pos.y);
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    /**
+     * Ensure players are armed
+     *
+     * @return optimal next move for the player to obtain a snowball
+     */
+    Move acquireSnowball() {
+      Move m = new Move();
+
+      // look for a nearby snowball
+      List<Point> nearby = nearbyItems(Const.GROUND_S);
+      nearby.addAll(nearbyItems(Const.GROUND_MS));  // some of these might be lying around
+      nearby.addAll(nearbyItems(Const.GROUND_LS));
+      nearby.addAll(nearbyItems(Const.GROUND_SMB)); // pick up a snowball from enemy snowman?
+      nearby.sort(Comparator.comparingInt(pt -> euclidean(pt, pos)));
+
+      // Crush into a snowball, if we have snow.
+      if (holding == Const.HOLD_P1) {
+        m.action = "crush";
+      }
+      // holding something that won't help build a snowball, put it down
+      else if (holding == Const.HOLD_L) {
+        m.action = "drop";
+        Optional<Point> dest = neighbors8(pos).stream()
+            .filter(p -> ground[p.x][p.y] == Const.GROUND_EMPTY).findAny();
+        if (dest.isPresent()) {
+          m.dest = dest.get();
+          log("%s is dropping a large snowball at %s", this, m.dest);
+        }
+      }
+      // holding something that won't help build a snowball, put it down
+      else if (holding == Const.HOLD_M) {
+        m.action = "drop";
+        // first choice is to drop on a large snowball if there is one
+        Optional<Point> dest = neighbors8(pos).stream()
+            .filter(p -> ground[p.x][p.y] == Const.GROUND_L).findAny();
+        m.dest = dest.orElseGet(() -> neighbors8(pos).get(0));
+      }
+      // holding something that won't help build a snowball, put it down anywhere
+      else if (holding > 0) {
+        Optional<Point> dest = neighbors8(pos).stream()
+            .filter(p -> ground[p.x][p.y] == Const.GROUND_EMPTY)
+            .findAny();
+        m.action = "drop";
+        m.dest = dest.orElseGet(() -> neighbors8(pos).get(0));
+      }
+      // we can get there in 2 turns or so it's cheaper than building a new one
+      else if (!nearby.isEmpty() && neighbors8(pos).contains(nearby.get(0))) {
+        if (standing) {
+          m.action = "crouch";
+        }
+        else {
+          m.action = "pickup";
+          m.dest = nearby.get(0);
+        }
+      }
+      else if (!nearby.isEmpty() && neighbors12(pos, standing).contains(nearby.get(0))) {
+        if (!standing) {
+          m.action = "stand";
+        }
+        else {
+          m.action = "run";
+          // don't step on the snowball
+          Point sb = new Point(Math.max(nearby.get(0).x, pos.x), Math.max(nearby.get(0).y, pos.y));
+          m.dest = bestDestinationCloseTo(sb, pos, true);
+          log("%s %s to %s to pick up a snowball at %s", this, m.action, m.dest, nearby);
+        }
+      }
+      // otherwise just make one
+      else {
+        // We don't have snow, see if there is some nearby.
+        int sx = -1, sy = -1;
+        // Look in front of us first
+        for (Point n : neighbors8(pos)) {
+          if (ground[n.x][n.y] == Const.GROUND_EMPTY && height[n.x][n.y] > 0) {
+            sx = n.x;
+            sy = n.y;
+            break;
+          }
+        }
+        // If there is snow, try to get it.
+        if (sx >= 0) {
+          if (standing) {
+            m.action = "crouch";
+          }
+          else {
+            m.action = "pickup";
+            m.dest = new Point(sx, sy);
+          }
+        }
+        // go somewhere else if there's no snow nearby
+        else {
+          reposition();
+          return moveToward(runTarget);
+        }
+      }
+      return m;
+    }
+
+    /**
+     * For now just check if there is a snowman within 5 units of the current runTarget
+     *
+     * @return true if there is no snowman in the current sector
+     */
+    boolean sectorNeedsSnowman() {
+      List<Point> nearestSnowmen = nearbyItems(Const.GROUND_SMR); // our snowmen
+      Point nearestSnowman = nearestSnowmen.isEmpty() ? null : nearestSnowmen.get(0);
+
+      if (nearestSnowman == null) {
+        return true;
+      }
+
+      return euclidean(nearestSnowman, pos) > 5;
+    }
+
+    /**
+     * If the target square is empty, don't return true unless we are there
+     * otherwise it's okay to be adjacent to it
+     *
+     * TODO the runTarget and all of its neighbors could be covered by obstacles!
+     *
+     * @return true if we are in the zone specified by the runTarget
+     */
+    boolean reachedTarget() {
+      if (pos.equals(runTarget)) {
+        return true;
+      }
+      else if (ground[runTarget.x][runTarget.y] != Const.GROUND_EMPTY ||
+               height[runTarget.x][runTarget.y] >= Const.OBSTACLE_HEIGHT) {
+        return neighbors8(runTarget).contains(pos);
+      }
+      else {
+        return false;
+      }
+    }
+
+    Move decap(Point snowman) {
+      if (standing) {
+        return new Move("crouch");
+      }
+      else {
+        log("%s decap snowman at %s", this, snowman);
+        return new Move("pickup", snowman.x, snowman.y);
+      }
+    }
+
     boolean retreat = false;
     /**
      * Run the OODA (observe-orient-decide-act) loop
@@ -820,39 +1153,8 @@ public class Seeker {
     public Move chooseMove() {
       if (dazed > 0) {
         if (!retreat) {
-          // when we wake up, stop what we are doing and arm ourselves
-          activity.isComplete = true;
-
-          // can't target enemy, move to the nearest obstacle
-          List<Point> obstacles = nearbyItems(Const.GROUND_TREE);
-          // don't hide behind our own snowmen
-          obstacles.addAll(nearbyItems(Const.GROUND_SMR));
-          obstacles.sort(Comparator.comparingInt(a -> euclidean(pos, a)));
-
-          log(this + " is dazed, retreating...");
-          if (!obstacles.isEmpty() && euclidean(obstacles.get(0), pos) < 8) {
-            Point obstacle = obstacles.get(0);
-            log(" => changing runTarget to obstacle (%d) at %s", ground[obstacle.x][obstacle.y], obstacle);
-            runTarget = bestDestinationCloseTo(obstacle, pos, false);
-          }
-          else { // into the fray!
-            List<Player> threats = visibleOpponents();
-            if (threats.size() > 0) {
-              Point t = threats.get(0).pos;
-              log(" => changing runTarget to ", t);
-              runTarget = bestDestinationCloseTo(t, pos, false);
-            }
-            // just back up
-            else {
-              Point reverse = new Point(pos.x - runTarget.x, pos.y - runTarget.y);
-              // reverse our direction and reassess our priorities
-              Point p = new Point(pos.x + (int) Math.signum(reverse.x) * 4,
-                  pos.y + (int) Math.signum(reverse.y) * 4);
-              log(" => changing runTarget to ", p);
-              runTarget = p;
-            }
-          }
           // only do this once
+          handleRetreat();
           retreat = true;
         }
         // unable to act for now
@@ -860,166 +1162,79 @@ public class Seeker {
       }
       retreat = false;
 
-      // which opponents are potential targets/threats?
-      // NB: if we can't see them, it doesn't mean they can't see us
-      List<Player> threats = visibleOpponents();
-      List<Point> targets = threats.stream()
-          .map(ea -> ea.pos)
-          .collect(Collectors.toList());
+      Move threatResponse = handleThreats();
 
-      List<Point> snowmen = nearbyItems(Const.GROUND_SMB).stream()
-          .filter(p -> (ground[p.x][p.y] != Const.GROUND_EMPTY &&
-              ground[p.x][p.y] != GROUND_CHILD))
-          .collect(Collectors.toList());
+      // Opportunities might be a higher priority than threats
+      // if the cost of exploiting them is low and the risk of interruption is small
 
-      targets.addAll(snowmen);
-      targets.sort(Comparator.comparingInt(p -> euclidean(this.pos, p)));
+      // 1. make a snowball if we haven't got one
+      // 2. look for enemy snowmen to decapitate
+      // 3. look for partially-built snowmen to finish
+      // 4. if there are no threats or opportunities, continue to the runTarget
 
-      if (!targets.isEmpty()) {
-        String threatString = targets.stream().map(p -> p.toString())
-            .collect(Collectors.joining(", "));
-        log(this + " sees targets at " + threatString);
-      }
+      // handle adjacent snowman and partial snowman as special cases
+      Optional<Point> adjacentSnowman = neighbors8(pos).stream()
+          .filter(pt -> ground[pt.x][pt.y] == Const.GROUND_SMB)
+          .findAny();
 
-      for (Point target : targets) {
-        boolean isSnowman = ground[target.x][target.y] == Const.GROUND_SMB;
-        Optional<Player> enemy = threats.stream().filter(ea -> ea.pos == target).findAny();
-
-        // if enemies are building snowmen, we want to avoid targeting aggressively so we
-        // can have our build activities clean up the snowmen lying around the field
-        if (enemy.isPresent() && (enemy.get().holding != Const.HOLD_EMPTY || enemy.get().dazed > 1)) {
-          continue;
-        }
-
-        // clear and present danger
-        if (holding == Const.HOLD_S1) {
-
-          // Stand up if the child is armed.
-          if (!standing) {
-            // TODO only stand if the target is too far away to hit from a crouching position
-            return new Move("stand");
-          }
-          else {
-            // excellent, we are prepared
-            int dist = euclidean(this.pos, target);
-            int dx = target.x - pos.x;
-            int dy = target.y - pos.y;
-
-            double angle = Math.atan2(dy, dx);
-
-            // ensure that the target cell is included in the linear interpolation path of the throw
-            log("%s targets: %s at %d units away", this, target, dist);
-
-            // height of the player throwing the snowball
-            int h0 = standing ? Const.STANDING_HEIGHT : Const.CROUCHING_HEIGHT;
-            // height of the target's head (only matters for snowmen; for players we just need h > 0)
-            int h = height[target.x][target.y];
-
-            boolean isDecap = isSnowman && h0 > h;
-
-            int overthrow = isDecap ? dist * h0 / (h0 - h) : dist * 3;
-            int max_range = isDecap ? Const.THROW_LIMIT / (h0 / (h0 - h)) : 8;
-
-            if (dx * dx + dy * dy < max_range * max_range) {
-              Point p1 = new Point((int) (pos.x + overthrow * Math.cos(angle)),
-                  (int) (pos.y + overthrow * Math.sin(angle)));
-
-              List<Point3> path = interpolate(pos, p1, h0);
-              log("  => overthrow = %d, interpolate %s to %s is %s", overthrow, pos, p1, pathString(path));
-
-              if (isAccurateTrajectory(path, target)) {
-                // sometimes we have an accurate trajectory but we fail to kill the enemy snowman
-                // don't get stuck on the same pattern over and over
-                if (target == lastTarget && isSnowman) {
-                  return moveToward(target);
-                }
-
-                log("%s *** target %s: %s, p1:%s, h:%d", this, (isSnowman ? "snowman" : "player"),
-                    target, p1, h);
-                lastTarget = target;
-
-                return new Move("throw", p1.x, p1.y);
-              }
-            }
-            // we couldn't get a shot, try and get closer
-            if (isSnowman) {
-              log("%s target is too far away (%d units, max_range is %d) - trying to close in",
-                  this, dist, max_range);
-              return moveToward(target);
-            }
-          }
-        }
-        else {
-          // we are being targeted, can we catch instead of getting hit?
-          for (Player threat : threats) {
-            if (threat.holding == Const.HOLD_S1 &&
-                euclidean(threat.pos, pos) <= 8 &&
-                holding == Const.HOLD_EMPTY) {
-              return new Move("catch", threat.pos.x, threat.pos.y);
-            }
-          }
-        }
-      }
+      Optional<Point> adjacentPartial = neighbors8(pos).stream()
+          .filter(pt -> ground[pt.x][pt.y] == Const.GROUND_LM || ground[pt.x][pt.y] == Const.GROUND_L)
+          .findAny();
 
       // maybe there's a nearby unfinished snowman we can work on
       List<Point> nearestPartials = nearestIncomplete(pos);
-      List<Point> nearestSnowmen = nearbyItems(Const.GROUND_SMR); // our snowmen
-      Point nearestSnowman = nearestSnowmen.isEmpty() ? null : nearestSnowmen.get(0);
       // where are teammates working on snowmen
       List<Point> inProgress = friends().stream()
-          .filter(p -> p.activity instanceof Build)
-          .map(p -> ((Build)p.activity).dest)
+          .filter(p -> p.activity != null)
+          .map(p -> p.activity.site)
           .collect(Collectors.toList());
 
       Optional<Point> nearestPartial = nearestPartials.stream()
-          .filter(p -> !inProgress.contains(p))
+          .filter(p -> !inProgress.contains(p) && euclidean(p, pos) < 5)
           .findAny();
 
-      // We aren't facing threats, let's look for opportunities
-      // 1. make a snowball if we haven't got one
-      // 2. look for enemy snowmen to decapitate (done above)
-      // 3. look for partially-built snowmen to finish
-      // 4. if there are no threats or opportunities, continue to the runTarget
-      if (activity == null || activity.isComplete) {
-        if (holding != Const.HOLD_S1) {
-          log(this + " is looking for a snowball");
-          activity = new AcquireSnowball();
+      if (activity == null || activity.isComplete()) {
+        if (holding < Const.HOLD_S1 || holding > Const.HOLD_S3) {
+          // check if we are adjacent to the target, no need to waste a snowball
+          if (adjacentSnowman.isPresent()) {
+            return decap(adjacentSnowman.get());
+          }
+          else {
+            log("%s is acquiring a snowball", this);
+            return acquireSnowball();
+          }
         }
-        // no point in ducking if there's nobody around
+        else if (activity != null && adjacentPartial.isPresent()) {
+          activity = new Build();
+          return activity.nextMove(this);
+        }
+        else if (nearestPartial.isPresent() && sectorNeedsSnowman()) {
+          activity = new Build();
+          return moveToward(nearestPartial.get());
+        }
+        else if (threatResponse != null) {
+          return threatResponse;
+        }
         else if (!standing) {
           return new Move("stand");
         }
-        else if (!pos.equals(runTarget)) {
-          log(this + " is moving towards " + runTarget);
+        else if (!reachedTarget()) {
+          log("%s has not yet reached its runTarget", this);
           return moveToward(runTarget);
         }
-        else if ((nearestSnowman == null || euclidean(pos, nearestSnowman) > 8)) {
-
+        else if (sectorNeedsSnowman()) {
           activity = new Build();
-
-          if (nearestPartial.isPresent()) {
-
-            Point pt = nearestPartial.get();
-            log("%s sees an incomplete snowman at %s", this, pt);
-            if (neighbors8(pos).contains(pt)) {
-              log("%s is finishing a snowman at %s", this, runTarget);
-            }
-            else {
-              List<Point> path = freePath(pos, pt, standing);
-              if (path.size() > 2 && path.size() < 8) {
-                log("%s is moving toward partial at %s", this, pt);
-                runTarget = path.get(path.size() - 2);
-                return moveToward(runTarget);
-              }
-            }
-          }
+          return activity.nextMove(this);
         }
         else {
           reposition();
+          log("%s is repositioning", this);
           return moveToward(runTarget);
         }
       }
-      return activity.nextMove(this);
+      else {
+        return activity.nextMove(this);
+      }
     }
   }
 
@@ -1042,19 +1257,10 @@ public class Seeker {
     }
   }
 
-  /*
-   * An activity is a named list of moves carried out according to some policy (maybe ad-hoc)
-   */
-  abstract static class Activity {
-    boolean isComplete = false;
-    abstract public String code();
-    abstract public Move nextMove(Player c);
-  }
-
-  class Build extends Activity {
+  class Build {
 
     Move[] instructions = {
-        new Move("idle"), // placeholder
+        new Move("idle"), // placeholder: state 0 does not generate a move
         new Move("pickup", 1, 0),
         new Move("pickup", 1, 0),
         new Move("pickup", 1, 0),
@@ -1070,17 +1276,22 @@ public class Seeker {
         new Move("stand"),
     };
 
-    int state = 0;    // not ready to give up state yet :(
-    Point dest = null;
-    int start_lm = 10; // offset in instruction list when L, M are complete
-    int start_m = 6;  // offset in instruction list when L is complete
+    int state = 0;
+    int start_m = 6;     // offset in instruction list when L is complete
+    int start_lm = 10;    // offset in instruction list when L, M are complete
+
+    Point site = null;
 
     public String code() {
       return String.format("B[%d]", state);
     }
 
     public String toString() {
-      return (String.format("Build {state:%d, dest:%s, complete:%b}", state, dest, isComplete));
+      return (String.format("Build {state:%d, site:%s}", state, site));
+    }
+
+    public boolean isComplete() {
+      return state >= instructions.length - 1;
     }
 
     public Move nextMove(Player c) {
@@ -1091,105 +1302,68 @@ public class Seeker {
 
       // we need 2 nearby sources of snow with height >= 3, and an unblocked dest
 
-      /* TODO future consideration
-      List<Point> nearestMs  = c.nearbyItems(Const.GROUND_M);  // less useful?
-      List<Point> nearestSs  = c.nearbyItems(Const.GROUND_S);  // less useful?
-      List<Point> nearestSLs = c.nearbyItems(Const.GROUND_LS); // tricky?
-      List<Point> nearestMSs = c.nearbyItems(Const.GROUND_MS); // tricky?
-       */
-
       // maybe there's a nearby unfinished snowman we can work on
       List<Point> nearestPartials = nearestIncomplete(c.pos);
       Point partial = nearestPartials.size() > 0 ? nearestPartials.get(0) : null;
 
-      // if there is a teammate closer than us, and they are not dazed, let them take it
-      List<Player> friends = c.friends().stream()
-          .filter(f -> f.dazed == 0)
-          .collect(Collectors.toList());
+      // 2. check for a partially completed snowman nearby
+      if (site == null && partial != null) {
+        if (neighbors8(c.pos).contains(partial)) {
+          site = partial;
+          state = ground[partial.x][partial.y] == Const.GROUND_L ? start_m : start_lm;
+          log("%s found partial (%d) at %s, activity = %s", c, ground[partial.x][partial.y], partial, this);
+        }
+      }
 
       if (state == 0) {
-        // 2. check for a partially completed snowman nearby
-        if (partial != null) {
-          int dist = euclidean(c.pos, partial);
-
-          if (neighbors8(c.pos).contains(partial)) {
-            dest = partial;
-            // we need one unit of snow for S, two for M
-            int units = ground[partial.x][partial.y] == Const.GROUND_L ? 3 : 1;
-            state = ground[partial.x][partial.y] == Const.GROUND_L ? start_m : start_lm;
-            log("%s found partial (%d) at %s, activity = %s",
-                c, ground[partial.x][partial.y], partial, this);
-          }
-          else if (dist < 8) {
-            // check if one of our teammates is already there
-            for (Player f : friends) {
-              if (euclidean(f.pos, partial) < dist) {
-                log("%s is not moving towards partial (%d), %s is closer",
-                    this, ground[partial.x][partial.y], f);
-                return c.moveToward(c.runTarget);
-              }
-            }
-            // find a point near the partial for us to finish the snowman
-            List<Point> dests = neighbors8(partial).stream()
-                .filter(ea -> ground[ea.x][ea.y] == Const.GROUND_EMPTY)
-                .collect(Collectors.toList());
-            dests.sort(Comparator.comparingInt(ea -> euclidean(c.pos, ea)));
-            if (!dests.isEmpty() && !neighbors8(c.pos).contains(partial)) {
-              // move closer to complete it if it's cheaper than building from scratch
-              log("%s moving closer to partial (%d) at %s", c, ground[partial.x][partial.y], partial);
-              return c.moveToward(dests.get(0));
-            }
-          }
-          // there is a nearby partial, but one of our teammates is on it
-          // there may be more, but we should ultimately handle that case without introducing more logic here
-        }
-
         // If we didn't get to finish the last snowman, maybe we're holding something.
-        // We should drop it.
         if (c.holding != Const.HOLD_EMPTY) {
           for (Point p : neighbors8(c.pos)) {
             if (ground[p.x][p.y] == Const.GROUND_EMPTY && height[p.x][p.y] <= Const.MAX_PILE - 3) {
-              log("%s dropping at %s", c, p);
               return new Move("drop", p.x, p.y);
             }
           }
         }
 
-        // 3. finish the snowman
-        for (Point p : neighbors8(c.pos)) {
-          if (ground[p.x][p.y] == Const.GROUND_EMPTY) {
-            log(" => %s setting dest to %s", c, p);
-            dest = p;
-            break;
+        // 3. start a new snowman if there isn't a partial in progress
+        if (site == null) {
+          int powder = 0;
+          for (Point p : neighbors8(c.pos)) {
+            powder += height[p.x][p.y];
+            if (site == null && ground[p.x][p.y] == Const.GROUND_EMPTY) {
+              log("%s building snowman at %s", c, p);
+              site = p;
+            }
+            if (site != null && powder >= 6) {
+              state = 1;
+            }
           }
         }
 
-        if (dest == null && c.holding == Const.HOLD_EMPTY) {
-          // Start trying to build a snowman.
-          log(" => %s building a snowman at %s", c, dest);
-          state = 1;
+        if (state == 0) {
+          c.reposition();
+          log("%s => no suitable snowman site found nearby", c);
         }
       }
 
-      // are we there yet?
-      if (dest != null && !neighbors8(c.pos).contains(dest)) {
-        return c.moveToward(dest);
-      }
-
-      // Are we building a snowman?
-      if (!isComplete) {
-        // Stamp out a move from our instruction template and return it.
+      // are we building a snowman?
+      if (state > 0) {
+        // return a move from our instruction template
         Move m = new Move(instructions[state].action);
+
+        // don't add to instruction list because we could be working on a partial
         if (m.action.equals("pickup") && c.standing) {
-          // not so fast there, buckaroo
-          log(c + " must crouch when building a snowman");
           return new Move("crouch");
+        }
+
+        // ensure we did not move away from our building site
+        if (!neighbors8(c.pos).contains(site)) {
+          return c.moveToward(site);
         }
 
         if (instructions[state].dest != null) {
           if (m.action.equals("drop")) {
-            log("%s: dropping %d at %s", c, c.holding, dest);
-            m.dest = dest;
+            m.dest = site;
           }
           else if (m.action.equals("pickup")) {
             for (Point p : neighbors8(c.pos)) {
@@ -1198,9 +1372,9 @@ public class Seeker {
               }
             }
             if (m.dest == null) {
-              log("%s: No snow near %s", c, dest);
-              isComplete = true;
+              log("%s: No snow near %s", c, site);
               c.reposition();
+              state = 0;
               return new Move("stand");
             }
           }
@@ -1211,144 +1385,12 @@ public class Seeker {
             return new Move();
           }
         }
-
-        log("%s activity step %d: move is %s at %s", c, state, m.action, m.dest);
-        this.isComplete = (++state == instructions.length);
+        state++;
         return m;
       }
 
       log(c.activity + " is complete, should not be idling");
       return new Move();
-    }
-  }
-
-  class AcquireSnowball extends Activity {
-
-    public String code() {
-      return String.format("S");
-    }
-
-    public Move nextMove(Player c) {
-      Move m = new Move();
-
-      // look for a nearby snowball
-      List<Point> nearby = c.nearbyItems(Const.GROUND_S);
-      nearby.addAll(c.nearbyItems(Const.GROUND_MS));  // some of these might be lying around
-      nearby.addAll(c.nearbyItems(Const.GROUND_LS));
-      nearby.addAll(c.nearbyItems(Const.GROUND_SMB)); // pick up a snowball from enemy snowman?
-      nearby.sort(Comparator.comparingInt(pt -> euclidean(pt, c.pos)));
-
-      // If we already had a snowball why is this task being invoked?
-      if (c.holding == Const.HOLD_S1 || c.holding == Const.HOLD_S2 || c.holding == Const.HOLD_S3) {
-        log(c + " already has a snowball, should not have AcquireSnowball activity");
-        isComplete = true;
-        m.action = "idle";
-      }
-      // Crush into a snowball, if we have snow.
-      else if (c.holding == Const.HOLD_P1) {
-        m.action = "crush";
-        isComplete = true;
-      }
-      // TODO the next three if statements are basically builder logic
-      //      when a build is canceled it should drop everything first
-      // holding something that won't help build a snowball, put it down
-      else if (c.holding == Const.HOLD_L) {
-        m.action = "drop";
-        Optional<Point> dest = neighbors8(c.pos).stream()
-            .filter(p -> ground[p.x][p.y] == Const.GROUND_EMPTY).findAny();
-        if (dest.isPresent()) {
-          m.dest = dest.get();
-          log("%s is dropping a large snowball at %s", c, m.dest);
-        }
-      }
-      // holding something that won't help build a snowball, put it down
-      else if (c.holding == Const.HOLD_M) {
-        m.action = "drop";
-        // first choice is to drop on a large snowball if there is one
-        Optional<Point> dest = neighbors8(c.pos).stream()
-            .filter(p -> ground[p.x][p.y] == Const.GROUND_L).findAny();
-        if (dest.isPresent()) {
-          m.dest = dest.get();
-          log("%s is dropping a medium snowball onto a large snowball at %s", c, m.dest);
-        }
-        else {
-          m.dest = neighbors8(c.pos).get(0);
-          log("%s is dropping a medium snowball at %s", c, m.dest);
-        }
-      }
-      // holding something that won't help build a snowball, put it down anywhere
-      else if (c.holding > 0) {
-        m.action = "drop";
-        Optional<Point> dest = neighbors8(c.pos).stream()
-            .filter(p -> ground[p.x][p.y] == Const.GROUND_EMPTY).findAny();
-        if (dest.isPresent()) {
-          m.dest = dest.get();
-          log("%s is dropping %d at %s", c, c.holding, m.dest);
-        }
-        else {
-          m.dest = neighbors8(c.pos).get(0);
-          log("%s is dropping %d at %s", c, c.holding, m.dest);
-        }
-      }
-      // we can get there in 2 turns or so it's cheaper than building a new one
-      else if (!nearby.isEmpty() && neighbors8(c.pos).contains(nearby.get(0))) {
-        log(c + " sees a nearby snowball at " + nearby.get(0));
-        if (c.standing) {
-          log(c + " is crouching");
-          m.action = "crouch";
-        }
-        else {
-          log(c + " is picking up a snowball at " + nearby.get(0));
-          m.action = "pickup";
-          m.dest = nearby.get(0);
-          isComplete = true;
-        }
-      }
-      else if (!nearby.isEmpty() && neighbors12(c.pos, c.standing).contains(nearby.get(0))) {
-        if (!c.standing) {
-          log(c + " is standing");
-          m.action = "stand";
-        }
-        else {
-          m.action = "run";
-          // don't step on the snowball
-          Point sb = new Point(Math.max(nearby.get(0).x, c.pos.x), Math.max(nearby.get(0).y, c.pos.y));
-          m.dest = bestDestinationCloseTo(sb, c.pos, true);
-          log("%s %s to %s to pick up a snowball at %s", c, m.action, m.dest, nearby);
-        }
-      }
-      // otherwise just make one
-      else {
-        // We don't have snow, see if there is some nearby.
-        int sx = -1, sy = -1;
-        // Look in front of us first
-        for (Point n : neighbors8(c.pos)) {
-//            log(c + " is checking for snow at " + n);
-          if (ground[n.x][n.y] == Const.GROUND_EMPTY && height[n.x][n.y] > 0) {
-            sx = n.x;
-            sy = n.y;
-            break;
-          }
-        }
-        // If there is snow, try to get it.
-        if (sx >= 0) {
-          if (c.standing) {
-            m.action = "crouch";
-          }
-          else {
-            log(c + " is picking up snow at [" + sx + ", " + sy + "]");
-            m.action = "pickup";
-            m.dest = new Point(sx, sy);
-            isComplete = true;
-          }
-        }
-        // go somewhere else if there's no snow nearby
-        else {
-          c.reposition();
-          return c.moveToward(c.runTarget);
-        }
-      }
-      return m;
     }
   }
 
@@ -1431,32 +1473,6 @@ public class Seeker {
   }
 
   /**
-   * Find a destination to set as a player's runTarget
-   *
-   * Assumes the destination is visible. Fools don't rush in.
-   *
-   * @param c ideal destination - but it may not be available
-   * @param s starting point - needed to help optimize choice
-   * @return the closest unblocked point near c
-   */
-  public Point xxxbestDestinationCloseTo(Point c, Point s) {
-    int range = 1;
-
-    List<Point> nearestUnblocked = new ArrayList<>();
-    while (range < 10 && nearestUnblocked.isEmpty()) {
-      nearestUnblocked = unblockedCellsInRange(c, range++);
-    }
-    if (nearestUnblocked.isEmpty()) {
-      log(this + " can't find a clear destination near " + c);
-      return c;
-    }
-    nearestUnblocked.sort(Comparator.comparingInt(a -> euclidean(s, a)));
-    Point dest = nearestUnblocked.get(0);
-    log("best destination near %s is %s (contains %d)", c, dest, ground[dest.x][dest.y]);
-    return dest;
-  }
-
-  /**
    * Find the point closest to end that is visible
    * with the shortest path from start.
    *
@@ -1506,7 +1522,8 @@ public class Seeker {
 //        .map(Point::toString).collect(Collectors.joining(", "));
 
     log("  => Best choice is " + best);
-    return best;
+    // TODO sometimes returns null - this algorithm seems overly complicated
+    return best == null ? start : best;
   }
 
   public void run() {
@@ -1565,11 +1582,11 @@ public class Seeker {
 
         /* Write out the child's move */
         if (m.dest == null) {
-//          log("%s action %d is %s", cList[i], i, m.action);
+          log("%s action is %s", cList[i], m.action);
           System.out.println(m.action);
         }
         else {
-//          log("%s action %d is %s %s", cList[i], i, m.action, m.dest);
+          log("%s action is %s %s", cList[i], m.action, m.dest);
           System.out.println(m.action + " " + m.dest.x + " " + m.dest.y);
         }
       }
