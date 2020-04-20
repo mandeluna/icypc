@@ -899,7 +899,7 @@ public class Seeker {
       log("  => ✅ dodge");
       List<Point> dodges = neighbors12(pos, standing);
       Point dodge = dodges.get(rnd.nextInt(dodges.size()));
-      return new Move("run", dodge.x, dodge.y);
+      return new Move(standing ? "run" : "crouch", dodge.x, dodge.y);
     }
 
     /**
