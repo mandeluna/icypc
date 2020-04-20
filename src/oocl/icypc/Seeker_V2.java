@@ -898,8 +898,11 @@ public class Seeker_V2 {
     Move dodge() {
       log("  => ✅ dodge");
       List<Point> dodges = neighbors12(pos, standing);
+      if (dodges.isEmpty() && !standing) {
+        return new Move("stand");
+      }
       Point dodge = dodges.get(rnd.nextInt(dodges.size()));
-      return new Move(standing ? "run" : "crouch", dodge.x, dodge.y);
+      return new Move(standing ? "run" : "crawl", dodge.x, dodge.y);
     }
 
     /**
@@ -931,7 +934,6 @@ public class Seeker_V2 {
 
       for (Point target : targets) {
         boolean isSnowman = ground[target.x][target.y] == Const.GROUND_SMB;
-        Optional<Player> enemy = threats.stream().filter(ea -> ea.pos.equals(target)).findAny();
 
         int dist = euclidean(this.pos, target);
         int dx = target.x - pos.x;
@@ -979,13 +981,9 @@ public class Seeker_V2 {
               if (target.equals(lastTarget)) {
                 // it's a snowball fight, not hand-to-hand combat
                 if (dist < 2) {
-                  if (isSnowman) {
-                    // this should happen in the main loop anyhow
-                    return new Move("pickup", target.x, target.y);
-                  }
-                  else {
-                    return dodge();
-                  }
+                  // target must be a snowman because of dodge check, above
+                  // this should happen in the main loop anyhow
+                  return new Move("pickup", target.x, target.y);
                 }
                 lastTarget = null;
                 return moveToward(target);
@@ -1142,7 +1140,7 @@ public class Seeker_V2 {
         return true;
       }
       else if (ground[runTarget.x][runTarget.y] != Const.GROUND_EMPTY ||
-          height[runTarget.x][runTarget.y] >= Const.OBSTACLE_HEIGHT) {
+               height[runTarget.x][runTarget.y] >= Const.OBSTACLE_HEIGHT) {
         return neighbors8(runTarget).contains(pos);
       }
       else {
@@ -1227,12 +1225,12 @@ public class Seeker_V2 {
           .filter(p -> !inProgress.contains(p) && euclidean(p, pos) < 5)
           .findAny();
 
-      if (activity == null || activity.isComplete()) {
-        // check if we are adjacent to the target, no need to waste a snowball
-        if (canEquipSnowball() && adjacentSnowman.isPresent()) {
-          return decap(adjacentSnowman.get());
-        }
-        else if (holding < Const.HOLD_S1 || holding > Const.HOLD_S3) {
+      // check if we are adjacent to the target, no need to waste a snowball
+      if (canEquipSnowball() && adjacentSnowman.isPresent()) {
+        return decap(adjacentSnowman.get());
+      }
+      else if (activity == null || activity.isComplete()) {
+        if (holding < Const.HOLD_S1 || holding > Const.HOLD_S3) {
           log("%s is acquiring a snowball", this);
           return acquireSnowball();
         }
@@ -1274,6 +1272,21 @@ public class Seeker_V2 {
           activity = null;
           reposition();
           return moveToward(runTarget);
+        }
+        // get rid of extra snowballs from decapping, they will confuse the builder
+        if (holding > Const.HOLD_S1 && holding <= Const.HOLD_S3) {
+          if (threatResponse != null) {
+            return threatResponse;
+          }
+          else if (activity.state == 11) {
+            for (Point p : neighbors8(pos)) {
+              if (ground[p.x][p.y] == Const.GROUND_EMPTY && height[p.x][p.y] <= Const.MAX_PILE - 3) {
+                return new Move("drop", p.x, p.y);
+              }
+            }
+            log("%s nowhere to drop snowball", this);
+            return new Move("throw", 15, 15);
+          }
         }
         log("%s choice is continue building", this);
         return activity.nextMove(this);
@@ -1453,27 +1466,6 @@ public class Seeker_V2 {
       cList[3].runTarget = new Point(23, 7);
       initialized = true;
     }
-  }
-
-  /**
-   * Find suitable target cells close to the origin provided
-   *
-   * @param o the center, also included if unblocked
-   * @param n the number of cells on either side to consider
-   * @return a list of unblocked cells within the radius
-   */
-  List<Point> unblockedCellsInRange(Point o, int n) {
-    List<Point> cells = new ArrayList<>();
-    for (int i = o.x - n; i < o.x + n; i++) {
-      for (int j = o.y - n; j < o.y + n; j++) {
-        if (i >= 0 && i < Const.SIZE && j >= 0 && j < Const.SIZE) {
-          if (ground[i][j] == Const.GROUND_EMPTY) {
-            cells.add(new Point(i, j));
-          }
-        }
-      }
-    }
-    return cells;
   }
 
   /**
