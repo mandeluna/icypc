@@ -586,6 +586,13 @@ public class Seeker {
      */
     Point runTarget = new Point(-1, -1);
 
+    void setRunTarget(Point runTarget) {
+      if (runTarget.x < 0 || runTarget.x >= Const.SIZE || runTarget.y < 0 || runTarget.y >= Const.SIZE) {
+        throw new IllegalArgumentException("Invalid run target " + runTarget);
+      }
+      this.runTarget = runTarget;
+    }
+
     /**
      * To avoid repeatedly hitting the same target (due to some bugs with targeting)
      */
@@ -732,7 +739,7 @@ public class Seeker {
           for (Point enc : encroachments) {
             if (!forbidden.contains(enc)) {
               log("%s is repositioning to encroachment at %s", this, enc);
-              runTarget = enc;
+              setRunTarget(enc);
               return;
             }
           }
@@ -762,7 +769,7 @@ public class Seeker {
 
       log("%s is repositioning. New zone is %s", this, zone);
 
-      this.runTarget = zone.points.get(rnd.nextInt(zone.points.size()));
+      setRunTarget(zone.points.get(rnd.nextInt(zone.points.size())));
     }
 
     /**
@@ -852,23 +859,23 @@ public class Seeker {
       if (!obstacles.isEmpty() && euclidean(obstacles.get(0), pos) < 2) {
         Point obstacle = obstacles.get(0);
         log(" => changing runTarget to obstacle (%d) at %s", ground[obstacle.x][obstacle.y], obstacle);
-        runTarget = bestDestinationCloseTo(obstacle, pos, false);
+        setRunTarget(bestDestinationCloseTo(obstacle, pos, false));
       }
       else { // into the fray!
         List<Player> threats = visibleOpponents();
         if (threats.size() > 0) {
           Point t = threats.get(0).pos;
           log(" => changing runTarget to ", t);
-          runTarget = bestDestinationCloseTo(t, pos, false);
+          setRunTarget(bestDestinationCloseTo(t, pos, false));
         }
         // just back up
         else {
           Point reverse = new Point(pos.x - runTarget.x, pos.y - runTarget.y);
           // reverse our direction and reassess our priorities
-          Point p = new Point(pos.x + (int) Math.signum(reverse.x) * 4,
-              pos.y + (int) Math.signum(reverse.y) * 4);
+          Point p = new Point(clamp(pos.x + (int) Math.signum(reverse.x) * 4, 0, Const.SIZE - 1),
+                              clamp(pos.y + (int) Math.signum(reverse.y) * 4, 0, Const.SIZE - 1));
           log(" => changing runTarget to ", p);
-          runTarget = p;
+          setRunTarget(p);
         }
       }
     }
@@ -994,17 +1001,6 @@ public class Seeker {
               lastTarget = target;
 
               return new Move("throw", p1.x, p1.y);
-            }
-          }
-        }
-        else {
-          // we are being targeted, can we catch instead of getting hit?
-          for (Player threat : threats) {
-            if (threat.holding == Const.HOLD_S1 &&
-                euclidean(threat.pos, pos) <= 8 &&
-                holding == Const.HOLD_EMPTY) {
-              log("%s getting ready to catch from %s", this, threat);
-              return new Move("catch", threat.pos.x, threat.pos.y);
             }
           }
         }
@@ -1212,6 +1208,13 @@ public class Seeker {
           .filter(pt -> ground[pt.x][pt.y] == Const.GROUND_LM || ground[pt.x][pt.y] == Const.GROUND_L)
           .findAny();
 
+      Optional<Player> nearestThreat = visibleOpponents().stream()
+          .filter(threat -> threat.dazed == 0 &&
+              threat.holding >= Const.HOLD_S1 &&
+              threat.holding <= Const.HOLD_S3)
+          .sorted(Comparator.comparingInt(threat -> euclidean(threat.pos, pos)))
+          .findAny();
+
       // maybe there's a nearby unfinished snowman we can work on
       List<Point> nearestPartials = nearestIncomplete(pos);
 
@@ -1225,9 +1228,14 @@ public class Seeker {
           .filter(p -> !inProgress.contains(p) && euclidean(p, pos) < 5)
           .findAny();
 
-      // check if we are adjacent to the target, no need to waste a snowball
+      // if we are adjacent to the target, no need to waste a snowball
       if (canEquipSnowball() && adjacentSnowman.isPresent()) {
         return decap(adjacentSnowman.get());
+      }
+      // if we are being targeted, we can catch instead of getting hit
+      else if (canEquipSnowball() && nearestThreat.isPresent()) {
+        Point threat = nearestThreat.get().pos;
+        return new Move("catch", threat.x, threat.y);
       }
       else if (activity == null || activity.isComplete()) {
         if (holding < Const.HOLD_S1 || holding > Const.HOLD_S3) {
