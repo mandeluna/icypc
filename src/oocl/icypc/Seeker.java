@@ -4,30 +4,17 @@
  * Implements some of the strategies described at
  * https://observablehq.com/@mandeluna/icpc-strategy-notes
  *
- * Steven Wart, OOCL (USA), 2020
+ * Steven Wart, Arumainathan Peter, Keith Kwan, Margaret del Mundo OOCL (USA), 2020
  */
 
 package oocl.icypc;
 
 import icypc.Const;
+
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Queue;
-import java.util.Random;
-import java.util.Scanner;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class Seeker {
@@ -861,6 +848,36 @@ public class Seeker {
       setRunTarget(zone.points.get(rnd.nextInt(zone.points.size())));
     }
 
+    Move handleDefense() {
+      Optional<Point> adjacentOurSnowman = neighbors8(pos).stream()
+          .filter(pt -> ground[pt.x][pt.y] == Const.GROUND_SMR)
+          .findAny();
+
+      Optional<Player> nearestThreat = visibleOpponents().stream()
+          .filter(threat -> threat.dazed == 0 &&
+              threat.holding >= Const.HOLD_S1 &&
+              threat.holding <= Const.HOLD_S3)
+          .sorted(Comparator.comparingInt(threat -> euclidean(threat.pos, pos)))
+          .findAny();
+
+      if (adjacentOurSnowman.isPresent() && nearestThreat.isPresent()) {
+        List<Point> pathBetweenSnowmanAndThreat = interpolate(adjacentOurSnowman.get(), nearestThreat.get().pos);
+
+        Optional<Point> pointToMoveTo = pathBetweenSnowmanAndThreat.stream().findFirst();
+
+        log("Handle defence called");
+        Move currentMove=moveToward(pointToMoveTo.get());
+
+        if (currentMove.getAction().equals("stand")) {
+          return null;
+        }
+        return currentMove;
+      }
+      else {
+        return null;
+      }
+    }
+
     /**
      * Return a move to get this child closer to target.
      */
@@ -1364,7 +1381,13 @@ public class Seeker {
       }
       retreat = false;
 
-      Move threatResponse = handleThreats();
+//      Move threatResponse = handleThreats();
+
+      Move threatResponse = handleDefense();
+
+      if (threatResponse == null) {
+         threatResponse = handleThreats();
+      }
       List<Point> defensivePositions = defensivePositions();
 
       // Opportunities might be a higher priority than threats
@@ -1491,6 +1514,10 @@ public class Seeker {
   static class Move {
     String action;
     Point dest;
+
+    String getAction() {
+      return action;
+    }
 
     public boolean equals(Object other) {
       if (other == null) {
