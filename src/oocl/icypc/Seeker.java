@@ -1393,11 +1393,6 @@ public class Seeker {
         activity = null;
         return decap(adjacentSnowman.get());
       }
-      // if we are building and have a snowball, we are on the last step
-      else if (currentSnowballCount() > 0 && threatResponse != null && !isBuilding()) {
-        log("%s choice is threat response", this);
-        return threatResponse;
-      }
       else if (adjacentPartial.isPresent()) {
         log("%s choice is to finish existing snowman", this);
         if (activity == null || activity.isComplete()) {
@@ -1411,6 +1406,11 @@ public class Seeker {
         activity = null;
         log("%s is preparing to catch snowball from %s", this, threat);
         return new Move("catch", threat.x, threat.y);
+      }
+      // if we are building and have a snowball, we are on the last step
+      else if (currentSnowballCount() > 0 && threatResponse != null && !isBuilding()) {
+        log("%s choice is threat response", this);
+        return threatResponse;
       }
       else if ((holding == Const.HOLD_EMPTY || holding == Const.HOLD_S1) &&
           nearestPartial.isPresent() && ourSnowmen.isEmpty()) {
