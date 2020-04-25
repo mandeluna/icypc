@@ -1324,6 +1324,25 @@ public class Seeker {
           ea.dazed == 0 && ea != this && euclidean(ea.pos, threat.pos) < dist);
     }
 
+    void setAvailableRunTarget(Point dest) {
+      if (isBlocked(dest)) {
+        log("%s runTarget is blocked", this);
+        List<Point> neighbors = neighbors8(dest).stream()
+            .sorted(Comparator.comparingInt(ea -> euclidean(ea, pos)))
+            .collect(Collectors.toList());
+        for (Point n : neighbors) {
+          if (!isBlocked(n)) {
+            setRunTarget(n);
+            return;
+          }
+        }
+        if (isBlocked(dest)) {
+          setRunTarget(bestDestinationCloseTo(dest, pos, false));
+          log("%s runTarget is still blocked, choosing nearby", this);
+        }
+      }
+    }
+
     /**
      * Run the OODA (observe-orient-decide-act) loop
      *
@@ -1418,6 +1437,7 @@ public class Seeker {
         if (activity == null || activity.isComplete()) {
           activity = new Build();
         }
+        setAvailableRunTarget(nearestPartial.get());
         return moveToTarget(nearestPartial.get());
       }
       else if (activity == null || activity.isComplete()) {
@@ -1430,21 +1450,7 @@ public class Seeker {
           return new Move("stand");
         }
         else if (!reachedTarget()) {
-          if (isBlocked(runTarget)) {
-            log("%s runTarget is blocked", this);
-            List<Point> neighbors = neighbors8(runTarget).stream()
-                .sorted(Comparator.comparingInt(ea -> euclidean(ea, pos)))
-                .collect(Collectors.toList());
-            for (Point n : neighbors) {
-              if (!isBlocked(n)) {
-                setRunTarget(n);
-              }
-            }
-            if (isBlocked(runTarget)) {
-              setRunTarget(bestDestinationCloseTo(runTarget, pos, false));
-              log("%s runTarget is still blocked, choosing nearby", this);
-            }
-          }
+          setAvailableRunTarget(runTarget);
           log("%s choice is navigation", this);
           return moveToTarget();
         }
@@ -1551,17 +1557,24 @@ public class Seeker {
       List<Point> nearestPartials = nearestIncomplete(c.pos);
       Point partial = nearestPartials.size() > 0 ? nearestPartials.get(0) : null;
 
+      // ensure other players on our team aren't building here
+      List<Point> others = players().stream()
+          .filter(ea -> ea != c && ea.isBuilding())
+          .map(ea -> ea.activity.site)
+          .collect(Collectors.toList());
+
       // 2. check for a partially completed snowman nearby
-      if (site == null && partial != null) {
-        if (neighbors8(c.pos).contains(partial)) {
-          site = partial;
-          state = ground[partial.x][partial.y] == Const.GROUND_L ? start_m : start_lm;
-          log("%s found partial (%d) at %s, activity = %s", c, ground[partial.x][partial.y], partial, this);
-        }
-        else if (euclidean(c.pos, partial) < 8) {
-          log("%s moving toward partial snowman at %s", c, partial);
-          Point dest = nearestPointBetween(partial, c.pos);
-          return c.moveToTarget(dest);
+      if (!others.contains(partial)) {
+        if (site == null && partial != null) {
+          if (neighbors8(c.pos).contains(partial)) {
+            site = partial;
+            state = ground[partial.x][partial.y] == Const.GROUND_L ? start_m : start_lm;
+            log("%s found partial (%d) at %s, activity = %s", c, ground[partial.x][partial.y], partial, this);
+          } else if (euclidean(c.pos, partial) < 8) {
+            log("%s moving toward partial snowman at %s", c, partial);
+            Point dest = nearestPointBetween(partial, c.pos);
+            return c.moveToTarget(dest);
+          }
         }
       }
 
