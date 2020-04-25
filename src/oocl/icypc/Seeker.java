@@ -646,7 +646,11 @@ public class Seeker {
     int color;
     int holding;
     int dazed;
+
     int previousSnowballCount = 0;
+    int missedCatchCount = 0;
+    Point previousPosition = null;
+    int currentPositionDuration = 0;
 
     public int currentSnowballCount() {
       switch(holding) {
@@ -667,7 +671,7 @@ public class Seeker {
 
     public String toString() {
       int id = Arrays.asList(cList).indexOf(this);
-      int zone = Zones.indexOf(zoneContaining(pos));
+      int zone = (pos.x > 0 && pos.y > 0) ? Zones.indexOf(zoneContaining(pos)) : -1;
 
       List<String> status = new ArrayList<>();
       status.add(String.format("pos:%s", pos));
@@ -679,6 +683,10 @@ public class Seeker {
       if (activity != null) status.add(String.format("act:%s", activity.code()));
 
       return String.format("Player %d {%s}", id, String.join(", ", status));
+    }
+
+    boolean valid(Point p) {
+      return p.x >= 0 && p.x < Const.SIZE && p.y >= 0 && p.y < Const.SIZE;
     }
 
     /**
@@ -869,13 +877,17 @@ public class Seeker {
           .map(f -> f.pos)
           .collect(Collectors.toList());
 
-//      if (!hotZones.isEmpty()) {
-//        Zone zone = hotZones.remove(0);
-//        log("%s is repositioning to hot zone: %s", this, zone);
-//
-//        setRunTarget(zone.randomPosition());
-//        return;
-//      }
+      // find a zone that contains fewer teammates than enemies
+      List<Zone> hotZones = Zones.stream()
+          .sorted(Comparator.comparingInt(z -> superiority(z.points)))
+          .collect(Collectors.toList());
+
+      if (!hotZones.isEmpty()) {
+        Zone zone = hotZones.get(0);
+        log("%s is repositioning to hot zone: %s", this, zone);
+
+        setRunTarget(zone.points.get(rnd.nextInt(zone.points.size())));
+      }
 
       // no encroachment - not good if are we losing snowmen
       // return a random square in the nearest dark zone (>30% hidden)
@@ -991,6 +1003,10 @@ public class Seeker {
         // no move possible?
         if (lastIndex-- == 0) {
           log(" => %s is unreachable, idling", target);
+          if (checkExcessiveDuration()) {
+            reposition();
+            return moveToTarget();
+          }
           return new Move();
         }
       }
@@ -1049,22 +1065,7 @@ public class Seeker {
      *
      * @return move to address the threat -- null if no suitable response is available
      */
-    Move handleThreats() {
-      // which opponents are potential targets/threats?
-      // NB: if we can't see them, it doesn't mean they can't see us
-      List<Player> threats = knownEnemies();
-      List<Point> targets = threats.stream()
-          .map(ea -> ea.pos)
-          .collect(Collectors.toList());
-
-      List<Point> snowmen = nearbyItems(Const.GROUND_SMB).stream()
-          .filter(p -> (ground[p.x][p.y] != Const.GROUND_EMPTY &&
-              ground[p.x][p.y] != GROUND_CHILD))
-          .collect(Collectors.toList());
-
-      targets.addAll(snowmen);
-      targets.sort(Comparator.comparingInt(p -> euclidean(this.pos, p)));
-
+    Move handleThreats(List<Point> targets) {
       if (!targets.isEmpty()) {
         String threatString = targets.stream().map(Point::toString)
             .collect(Collectors.joining(", "));
@@ -1320,7 +1321,13 @@ public class Seeker {
         return false;
       }
 
+      // avoid deadlock if our opponent is also waiting to catch
+      if (missedCatchCount > 2) {
+        return false;
+      }
+
       return players().stream().noneMatch(ea -> ea.canEquipSnowball() &&
+          ea.lastMove != null && "catch".equals(ea.lastMove.action) &&
           ea.dazed == 0 && ea != this && euclidean(ea.pos, threat.pos) < dist);
     }
 
@@ -1343,6 +1350,12 @@ public class Seeker {
       }
     }
 
+    boolean checkExcessiveDuration() {
+      return (activity == null || activity.isComplete()) ?
+        currentPositionDuration > 15 : currentPositionDuration > 5;
+    }
+
+    boolean retreat = false;
     /**
      * Run the OODA (observe-orient-decide-act) loop
      *
@@ -1362,11 +1375,17 @@ public class Seeker {
         return new Move();
       }
 
-      Move threatResponse = handleDefense();
+      List<Point> enemyPositions = knownEnemies().stream()
+          .filter(threat -> threat.dazed == 0 &&
+              threat.holding >= Const.HOLD_S1 &&
+              threat.holding <= Const.HOLD_S3)
+          .sorted(Comparator.comparingInt(threat -> euclidean(threat.pos, pos)))
+          .map(ea -> ea.pos)
+          .collect(Collectors.toList());
 
-      if (threatResponse == null) {
-         threatResponse = handleThreats();
-      }
+      Move defenseResponse = handleDefense();
+      Move enemyResponse = handleThreats(enemyPositions);
+      Move enemySnowmanResponse = handleThreats(nearbyItems(Const.GROUND_SMB));
 
       // Opportunities might be a higher priority than threats
       // if the cost of exploiting them is low and the risk of interruption is small
@@ -1412,13 +1431,6 @@ public class Seeker {
         activity = null;
         return decap(adjacentSnowman.get());
       }
-      else if (adjacentPartial.isPresent()) {
-        log("%s choice is to finish existing snowman", this);
-        if (activity == null || activity.isComplete()) {
-          activity = new Build();
-        }
-        return activity.nextMove(this);
-      }
       // if we are being targeted, we can catch instead of getting hit
       else if (nearestThreat.isPresent() && prioritizeCatch(nearestThreat.get())) {
         Point threat = nearestThreat.get().pos;
@@ -1427,18 +1439,55 @@ public class Seeker {
         return new Move("catch", threat.x, threat.y);
       }
       // if we are building and have a snowball, we are on the last step
-      else if (currentSnowballCount() > 0 && threatResponse != null && !isBuilding()) {
+      else if (currentSnowballCount() > 0 && enemyResponse != null && !isBuilding()) {
         log("%s choice is threat response", this);
-        return threatResponse;
+        return enemyResponse;
+      }
+      else if (adjacentPartial.isPresent()) {
+        log("%s choice is to finish existing snowman", this);
+        if (holding >= Const.HOLD_S1 && holding <= Const.HOLD_S3) {
+          Point dest = adjacentPartial.get();
+          if (isBuilding()) {
+            activity = null;
+          }
+          return new Move("drop", dest.x, dest.y);
+        }
+        if (activity == null || activity.isComplete()) {
+          activity = new Build();
+        }
+        return activity.nextMove(this);
+      }
+      else if (enemySnowmanResponse != null) {
+        int h0 = this.standing ? Const.STANDING_HEIGHT : Const.CROUCHING_HEIGHT;
+        Point sm = nearbyItems(Const.GROUND_SMB).get(0);
+        // if the snowman is 9 units tall, we need to be adjacent
+        if (h0 == height[sm.x][sm.y]) {
+          if (neighbors8(sm).contains(pos)) {
+            if (standing) {
+              return new Move("crouch");
+            }
+            setRunTarget(pos);
+            return new Move("pickup", sm.x, sm.y);
+          }
+          else {
+            setAvailableRunTarget(sm);
+            return moveToTarget();
+          }
+        }
+        return enemySnowmanResponse;
+      }
+      else if (defenseResponse != null) {
+        return defenseResponse;
       }
       else if ((holding == Const.HOLD_EMPTY || holding == Const.HOLD_S1) &&
           nearestPartial.isPresent() && ourSnowmen.isEmpty()) {
         log("%s choice is opportunistic build", this);
         if (activity == null || activity.isComplete()) {
           activity = new Build();
+          activity.site = nearestPartial.get();
         }
         setAvailableRunTarget(nearestPartial.get());
-        return moveToTarget(nearestPartial.get());
+        return moveToTarget();
       }
       else if (activity == null || activity.isComplete()) {
         if (holding < Const.HOLD_S1 || holding > Const.HOLD_S3) {
@@ -1564,13 +1613,14 @@ public class Seeker {
           .collect(Collectors.toList());
 
       // 2. check for a partially completed snowman nearby
-      if (!others.contains(partial)) {
-        if (site == null && partial != null) {
+      if (partial != null && Collections.disjoint(others, neighbors8(partial))) {
+        if (site == null) {
           if (neighbors8(c.pos).contains(partial)) {
             site = partial;
             state = ground[partial.x][partial.y] == Const.GROUND_L ? start_m : start_lm;
             log("%s found partial (%d) at %s, activity = %s", c, ground[partial.x][partial.y], partial, this);
-          } else if (euclidean(c.pos, partial) < 8) {
+          }
+          else if (euclidean(c.pos, partial) < 8) {
             log("%s moving toward partial snowman at %s", c, partial);
             Point dest = nearestPointBetween(partial, c.pos);
             return c.moveToTarget(dest);
@@ -1593,7 +1643,7 @@ public class Seeker {
           int powder = 0;
           for (Point p : neighbors8(c.pos)) {
             powder += height[p.x][p.y];
-            if (site == null && ground[p.x][p.y] == Const.GROUND_EMPTY) {
+            if (site == null && ground[p.x][p.y] == Const.GROUND_EMPTY && !others.contains(p)) {
               log("%s building snowman at %s", c, p);
               site = p;
             }
@@ -1839,13 +1889,6 @@ public class Seeker {
         cList[i].lastMove = m;
       }
 
-//      // find a zone that contains fewer teammates than enemies
-//      hotZones = Zones.stream()
-//          .filter(z -> superiority(z.points) > 0)
-//          .sorted(Comparator.comparingInt(z -> superiority(z.points)))
-//          .collect(Collectors.toList());
-
-
       turnNum = in.nextInt();
     }
   }
@@ -2002,6 +2045,7 @@ public class Seeker {
       Player c = cList[i];
       // keep track of attempts to catch snowballs
       c.previousSnowballCount = c.currentSnowballCount();
+      c.previousPosition = new Point(c.pos.x, c.pos.y);
 
       // Can we see this child?
       token = in.next();
@@ -2027,6 +2071,25 @@ public class Seeker {
         c.holding = token.charAt(0) - 'a';
 
         c.dazed = in.nextInt();
+      }
+
+      if (i < Const.CCOUNT) {
+        if (c.pos.equals(c.previousPosition)) {
+          if (c.checkExcessiveDuration()) {
+            log("%s has been at %s for %d turns", c, c.pos, c.currentPositionDuration);
+          }
+          c.currentPositionDuration++;
+        }
+        else {
+          c.currentPositionDuration = 0;
+        }
+
+        if (c.missedCatch()) {
+          c.missedCatchCount++;
+        }
+        else {
+          c.missedCatchCount = 0;
+        }
       }
     }
   }
